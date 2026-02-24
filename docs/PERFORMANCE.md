@@ -1,6 +1,6 @@
 # Performance and Cost
 
-Startup latency, operational timing, instance type guidance, and cost comparisons for the nat-zero module. All measurements from integration tests running in us-east-1 with `t4g.nano` instances.
+nat-zero's orchestrator Lambda was rewritten from Python 3.11 to Go, compiled to a native ARM64 binary running on the `provided.al2023` runtime. The result: **90% faster cold starts**, 69% less memory, and faster end-to-end execution. All measurements below are from real integration tests running in us-east-1 with `t4g.nano` instances.
 
 ## Startup Latency
 
@@ -95,15 +95,19 @@ The Lambda is a compiled Go binary on the `provided.al2023` runtime with 256 MB 
 | **attachEIP handler total** | **~0.5 s** | classify + waitForState + attachEIP |
 | **detachEIP handler total** | **~0.5 s** | classify + waitForState + detachEIP |
 
-### Comparison with Python Lambda
+### Why Go?
 
-The previous Python implementation used the `python3.11` runtime with 128 MB memory.
+The original Lambda was written in Python 3.11. It worked, but Python's interpreter overhead meant a 667 ms cold start and 98 MB memory footprint -- meaningful for a function that might be invoked dozens of times during a busy scaling period.
+
+Rewriting in Go and compiling to a native binary eliminated the interpreter entirely:
 
 | Metric | Python 3.11 (128 MB) | Go (256 MB) | Improvement |
 |--------|----------------------|-------------|-------------|
 | Cold start | 667 ms | 55-67 ms | **~90% faster** |
 | Handler total (scale-up) | 2,439 ms | ~2,000 ms | **~18% faster** |
 | Max memory used | 98 MB | 30 MB | **69% less** |
+
+The Go binary is ~4 MB, boots in under 70 ms, and the entire scale-up path completes in about 2 seconds. For a Lambda that runs on every EC2 state change in your account, that matters.
 
 ## What This Means for Your Workloads
 
@@ -115,29 +119,29 @@ The previous Python implementation used the `python3.11` runtime with 128 MB mem
 
 ## Cost
 
-Per AZ, per month. All prices are us-east-1 on-demand. Includes the [AWS public IPv4 charge](https://aws.amazon.com/blogs/aws/new-aws-public-ipv4-address-charge-public-ip-insights/) ($0.005/hr per public IP).
+Per AZ, per month. All prices are us-east-1 on-demand. Includes the [AWS public IPv4 charge](https://aws.amazon.com/blogs/aws/new-aws-public-ipv4-address-charge-public-ip-insights/) (\$0.005/hr per public IP).
 
 ### Idle vs active
 
 | State | nat-zero | fck-nat | NAT Gateway |
 |-------|----------|---------|-------------|
-| **Idle** (no workloads) | **~$0.80** | ~$7-8 | ~$36+ |
-| **Active** (workloads running) | ~$7-8 | ~$7-8 | ~$36+ |
+| **Idle** (no workloads) | **~\$0.80** | ~\$7-8 | ~\$36+ |
+| **Active** (workloads running) | ~\$7-8 | ~\$7-8 | ~\$36+ |
 
-**Idle breakdown**: EBS volume only (~$0.80/mo for 2 GB gp3). No instance running, no EIP allocated.
+**Idle breakdown**: EBS volume only (~\$0.80/mo for 2 GB gp3). No instance running, no EIP allocated.
 
-**Active breakdown**: t4g.nano instance ($3.07/mo) + EIP ($3.60/mo) + EBS ($0.80/mo) = ~$7.50/mo.
+**Active breakdown**: t4g.nano instance (\$3.07/mo) + EIP (\$3.60/mo) + EBS (\$0.80/mo) = ~\$7.50/mo.
 
-The key difference: nat-zero **releases the EIP when idle**, saving the $3.60/mo public IPv4 charge that fck-nat and NAT Gateway pay 24/7.
+The key difference: nat-zero **releases the EIP when idle**, saving the \$3.60/mo public IPv4 charge that fck-nat and NAT Gateway pay 24/7.
 
 ### Instance type options
 
-| Instance Type | vCPUs | RAM | Network | $/hour | $/month (24x7) | $/month (12hr/day) |
+| Instance Type | vCPUs | RAM | Network | \$/hour | \$/month (24x7) | \$/month (12hr/day) |
 |---------------|-------|-----|---------|--------|---------------|-------------------|
-| **t4g.nano** (default) | 2 | 0.5 GiB | Up to 5 Gbps | $0.0042 | $3.07 | $1.53 |
-| t4g.micro | 2 | 1 GiB | Up to 5 Gbps | $0.0084 | $6.13 | $3.07 |
-| t4g.small | 2 | 2 GiB | Up to 5 Gbps | $0.0168 | $12.26 | $6.13 |
-| c7gn.medium | 1 | 2 GiB | Up to 25 Gbps | $0.0624 | $45.55 | $22.78 |
+| **t4g.nano** (default) | 2 | 0.5 GiB | Up to 5 Gbps | \$0.0042 | \$3.07 | \$1.53 |
+| t4g.micro | 2 | 1 GiB | Up to 5 Gbps | \$0.0084 | \$6.13 | \$3.07 |
+| t4g.small | 2 | 2 GiB | Up to 5 Gbps | \$0.0168 | \$12.26 | \$6.13 |
+| c7gn.medium | 1 | 2 GiB | Up to 25 Gbps | \$0.0624 | \$45.55 | \$22.78 |
 
 Spot pricing typically offers 60-70% savings on t4g instances. Use `market_type = "spot"` to enable.
 
@@ -146,10 +150,10 @@ Spot pricing typically offers 60-70% savings on t4g instances. Use `market_type 
 **t4g.nano** (default) is right for most workloads:
 - Handles typical dev/staging NAT traffic
 - Burstable up to 5 Gbps with CPU credits
-- $3/month on-demand, ~$1/month on spot
+- \$3/month on-demand, ~\$1/month on spot
 
 **t4g.micro / t4g.small** — consider if you need sustained throughput beyond t4g.nano's baseline or workloads transfer large volumes consistently.
 
-**c7gn.medium** — consider if you need consistently high network throughput (up to 25 Gbps). At $45/month it's still cheaper than NAT Gateway for most data transfer patterns.
+**c7gn.medium** — consider if you need consistently high network throughput (up to 25 Gbps). At \$45/month it's still cheaper than NAT Gateway for most data transfer patterns.
 
 Instance type does **not** affect startup time (~12 s regardless), only maximum sustained throughput and monthly cost.

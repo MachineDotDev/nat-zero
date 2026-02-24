@@ -2,7 +2,7 @@
 
 ## Basic Usage
 
-A complete working example that creates a VPC with public and private subnets, then deploys nat-zero to provide scale-to-zero NAT for the private subnets.
+The simplest way to get started: create a VPC with public and private subnets, then drop in nat-zero. Your private subnets get internet access when workloads are running, and you pay nothing when they're not.
 
 ```hcl
 terraform {

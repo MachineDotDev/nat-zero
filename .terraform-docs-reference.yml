@@ -1,0 +1,5 @@
+formatter: "markdown table"
+
+output:
+  template: |
+    {{ .Content }}

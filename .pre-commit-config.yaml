@@ -40,5 +40,8 @@ repos:
     rev: "v0.16.0"
     hooks:
       - id: terraform-docs-go
-        name: terraform-docs
-        args: ["-c", ".terraform-docs.yml", "markdown", "table", "--output-file", "docs/README.md", "."]
+        name: terraform-docs (README.md)
+        args: ["--output-mode", "inject", "--output-file", "README.md", "."]
+      - id: terraform-docs-go
+        name: terraform-docs (docs/REFERENCE.md)
+        args: ["-c", ".terraform-docs-reference.yml", "--output-mode", "replace", "--output-file", "docs/REFERENCE.md", "."]

@@ -2,7 +2,9 @@
 
 ## High-Level Overview
 
-The nat-zero module provides event-driven, scale-to-zero NAT instances for AWS. It uses EventBridge to capture EC2 instance state changes and a Lambda function to orchestrate the NAT instance lifecycle.
+nat-zero takes a fundamentally different approach to NAT on AWS. Instead of running infrastructure around the clock, it treats NAT as a **reactive service**: infrastructure that exists only when something needs it.
+
+The module deploys an EventBridge rule that watches for EC2 state changes, and a Go Lambda that orchestrates NAT instance lifecycles in response. No polling, no cron jobs, no always-on compute -- just event-driven reactions to what's actually happening in your VPC.
 
 ```
                           DATA PLANE
@@ -237,7 +239,7 @@ Key design decisions:
 
 ## Comparison with fck-nat
 
-This module complements fck-nat by adding scale-to-zero capability.
+nat-zero builds on top of fck-nat -- it uses the same AMI and the same iptables-based NAT approach. The difference is the orchestration layer: instead of an always-on ASG, nat-zero uses event-driven Lambda to start and stop NAT instances on demand.
 
 ```
   fck-nat (Always-On)                    nat-zero (Scale-to-Zero)
@@ -268,14 +270,14 @@ This module complements fck-nat by adding scale-to-zero capability.
                                          └────────────────────────────────┘
 ```
 
-Costs per AZ, per month. Includes the [AWS public IPv4 charge](https://aws.amazon.com/blogs/aws/new-aws-public-ipv4-address-charge-public-ip-insights/) ($3.60/mo per public IP, effective Feb 2024).
+Costs per AZ, per month. Includes the [AWS public IPv4 charge](https://aws.amazon.com/blogs/aws/new-aws-public-ipv4-address-charge-public-ip-insights/) (\$3.60/mo per public IP, effective Feb 2024).
 
 | Aspect | fck-nat | nat-zero |
 |--------|---------|-------------------|
 | Architecture | ASG with min=1 | Lambda + EventBridge |
-| Idle cost | ~$7-8/mo (instance + EIP 24/7) | ~$0.80/mo (EBS only, no EIP) |
-| Active cost | ~$7-8/mo | ~$7-8/mo (same) |
-| Public IPv4 charge | $3.60/mo always | $0 when idle (EIP released) |
+| Idle cost | ~\$7-8/mo (instance + EIP 24/7) | ~\$0.80/mo (EBS only, no EIP) |
+| Active cost | ~\$7-8/mo | ~\$7-8/mo (same) |
+| Public IPv4 charge | \$3.60/mo always | \$0 when idle (EIP released) |
 | Scale-to-zero | No | Yes |
 | Self-healing | ASG replaces unhealthy | Lambda creates new on demand |
 | AMI | fck-nat AMI | fck-nat AMI (same) |

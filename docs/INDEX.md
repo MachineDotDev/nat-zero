@@ -1,6 +1,10 @@
 # nat-zero
 
-Scale-to-zero NAT instances for AWS. Uses [fck-nat](https://fck-nat.dev/) AMIs. Zero cost when idle.
+**Scale-to-zero NAT instances for AWS.** Stop paying for NAT when nothing is running.
+
+nat-zero is a Terraform module that brings event-driven, scale-to-zero NAT to your AWS VPCs. When a workload starts in a private subnet, a NAT instance spins up automatically. When the last workload stops, the NAT shuts down and its Elastic IP is released. You pay nothing while idle -- just ~\$0.80/mo for a stopped EBS volume.
+
+Built on [fck-nat](https://fck-nat.dev/) AMIs. Orchestrated by a Go Lambda with a 55 ms cold start. Proven by real integration tests that deploy infrastructure and verify connectivity end-to-end.
 
 ```
                          CONTROL PLANE
@@ -26,35 +30,42 @@ Scale-to-zero NAT instances for AWS. Uses [fck-nat](https://fck-nat.dev/) AMIs. 
   └──────────────────┘
 ```
 
-## How It Works
+## Why nat-zero?
 
-An EventBridge rule captures all EC2 instance state changes. A Lambda function evaluates each event and manages NAT instance lifecycle per-AZ:
+AWS NAT Gateway costs a minimum of ~\$36/month per AZ -- even if nothing is using it. fck-nat brings that down to ~\$7-8/month, but the instance and its public IP still run 24/7.
 
-- **Workload starts** in a private subnet → Lambda starts (or creates) a NAT instance in the same AZ and attaches an Elastic IP
-- **Last workload stops** in an AZ → Lambda stops the NAT instance and releases the Elastic IP
-- **NAT instance starts** → Lambda attaches an EIP to the public ENI
-- **NAT instance stops** → Lambda detaches and releases the EIP
+**nat-zero takes it further.** When your private subnets are idle, there's no NAT instance running and no Elastic IP allocated. Your cost drops to the price of a stopped 2 GB EBS volume: about 80 cents a month.
 
-Each NAT instance uses dual ENIs (public + private) pre-created by Terraform. Traffic from private subnets routes through the private ENI, gets masqueraded via iptables, and exits through the public ENI with an Elastic IP.
+This matters most for:
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed diagrams, [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for timing and cost data, and [docs/TEST.md](docs/TEST.md) for integration test documentation.
+- **Dev and staging environments** that sit idle nights and weekends
+- **CI/CD runners** that spin up for minutes, then disappear for hours
+- **Batch and cron workloads** that run periodically
+- **Side projects** where every dollar counts
 
-## When To Use This Module
+### Cost comparison (per AZ, per month)
 
-| Use Case | This Module | fck-nat | NAT Gateway |
-|---|---|---|---|
-| Dev/staging with intermittent workloads | **Best fit** | Wasteful | Very wasteful |
-| Production 24/7 workloads | Overkill | **Best fit** | Simplest |
-| Cost-obsessive environments | **Best fit** | Good | Expensive |
-| Simplicity priority | More moving parts | **Simpler** | Simplest |
+| State | nat-zero | fck-nat | NAT Gateway |
+|-------|----------|---------|-------------|
+| **Idle** (no workloads) | **~\$0.80** | ~\$7-8 | ~\$36+ |
+| **Active** (workloads running) | ~\$7-8 | ~\$7-8 | ~\$36+ |
 
-**Use this module** when your private subnet workloads run intermittently (CI/CD, dev environments, batch jobs) and you want to pay nothing when idle.
+The key: nat-zero **releases the Elastic IP when idle**, avoiding the [\$3.60/month public IPv4 charge](https://aws.amazon.com/blogs/aws/new-aws-public-ipv4-address-charge-public-ip-insights/) that fck-nat and NAT Gateway pay around the clock.
 
-**Use fck-nat** when workloads run 24/7 and you want simplicity with ASG self-healing.
+## How it works
 
-**Use NAT Gateway** when you prioritize simplicity and availability over cost.
+An EventBridge rule watches for EC2 instance state changes in your VPC. A Lambda function reacts to each event:
 
-## Usage
+- **Workload starts** in a private subnet -- Lambda creates (or restarts) a NAT instance in that AZ and attaches an Elastic IP
+- **Last workload stops** in an AZ -- Lambda stops the NAT instance and releases the Elastic IP
+- **NAT instance reaches "running"** -- Lambda attaches an EIP to the public ENI
+- **NAT instance reaches "stopped"** -- Lambda detaches and releases the EIP
+
+Each NAT instance uses two persistent ENIs (public + private) pre-created by Terraform. They survive stop/start cycles, so route tables stay intact and there's no need to reconfigure anything when a NAT comes back.
+
+See [Architecture](ARCHITECTURE.md) for detailed event flows and sequence diagrams.
+
+## Quick start
 
 ```hcl
 module "nat_zero" {
@@ -75,115 +86,58 @@ module "nat_zero" {
 }
 ```
 
-See [`examples/basic/`](examples/basic/) for a complete working example.
+See [Examples](EXAMPLES.md) for complete working configurations including spot instances, custom AMIs, and building from source.
 
-## Cost Estimate
+## Performance
 
-Per AZ, per month. Accounts for the [AWS public IPv4 charge](https://aws.amazon.com/blogs/aws/new-aws-public-ipv4-address-charge-public-ip-insights/) ($0.005/hr per public IP, effective Feb 2024).
+The orchestrator Lambda is written in Go and compiled to a native ARM64 binary. It was rewritten from Python to eliminate cold start overhead -- init latency dropped from 667 ms to 55 ms, a **90% improvement**. Peak memory usage went from 98 MB down to 30 MB.
 
-| State | This Module | fck-nat | NAT Gateway |
-|-------|------------|---------|-------------|
-| **Idle** (no workloads) | **~$0.80** (EBS only) | ~$7-8 (instance + EIP) | ~$36+ ($32 gw + $3.60 IP) |
-| **Active** (workloads running) | ~$7-8 (instance + EBS + EIP) | ~$7-8 (same) | ~$36+ (+ $0.045/GB) |
-
-Key cost difference: this module **releases the EIP when idle**, avoiding the $3.60/mo public IPv4 charge. fck-nat keeps an EIP attached 24/7.
-
-## Startup Latency
-
-| Scenario | Time to Connectivity |
+| Scenario | Time to connectivity |
 |----------|---------------------|
-| First workload in AZ (cold create) | **~15 seconds** |
-| NAT already running | **Instant** |
-| Restart from stopped (after idle) | **~12 seconds** |
+| First workload in AZ (cold create) | ~15 seconds |
+| NAT already running | Instant |
+| Restart from stopped | ~12 seconds |
 
-The first workload instance in an AZ will not have internet access for approximately 15 seconds. Design startup scripts to retry outbound connections. Subsequent instances in the same AZ get connectivity immediately since the route table already points to the running NAT.
+The ~15 second cold-create time is dominated by EC2 instance boot and fck-nat AMI configuration -- not the Lambda. Subsequent workloads in the same AZ get connectivity immediately since the route table already points to the running NAT.
 
-See [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for detailed timing breakdowns and instance type benchmarks.
+See [Performance](PERFORMANCE.md) for detailed Lambda execution timings, instance type guidance, and cost breakdowns.
 
-## Important Notes
+## Tested against real infrastructure
 
-- **EventBridge scope**: The EventBridge rule captures ALL EC2 state changes in the account. The Lambda filters events by VPC ID, so it only acts on instances in the target VPC.
-- **EIP behavior**: An Elastic IP is allocated when a NAT instance starts and released when it stops. You are not charged for EIPs while the NAT instance is stopped.
-- **fck-nat AMI**: By default, this module uses the public fck-nat AMI (`568608671756`). You can override this with `use_fck_nat_ami = false` and provide `custom_ami_owner` + `custom_ami_name_pattern`, or set `ami_id` directly.
-- **Dual ENI**: Each AZ gets a pair of persistent ENIs (public + private). These survive instance stop/start cycles, preserving route table entries.
-- **Dead Letter Queue**: Failed Lambda invocations are sent to an SQS DLQ for debugging.
+nat-zero isn't just unit-tested -- it's integration-tested against real AWS infrastructure on every PR. The test suite uses [Terratest](https://terratest.gruntwork.io/) to:
 
-## Requirements
+1. Deploy the full module (Lambda, EventBridge, ENIs, security groups, launch templates)
+2. Launch a workload instance and verify NAT creation with EIP
+3. Verify the workload's egress IP matches the NAT's Elastic IP
+4. Terminate the workload and verify NAT scale-down and EIP release
+5. Launch a new workload and verify NAT restart
+6. Run the cleanup action and verify all resources are removed
+7. Tear down everything with `terraform destroy`
 
-| Name | Version |
-|------|---------|
-| terraform | >= 1.3 |
-| aws | >= 5.0 |
-| archive | >= 2.0 |
+The full lifecycle takes about 5 minutes in CI. See [Testing](TESTING.md) for phase-by-phase documentation.
 
-## Providers
+## When to use this module
 
-| Name | Version |
-|------|---------|
-| aws | >= 5.0 |
-| archive | >= 2.0 |
+| Use case | nat-zero | fck-nat | NAT Gateway |
+|----------|----------|---------|-------------|
+| Dev/staging with intermittent workloads | **Best fit** | Wasteful | Very wasteful |
+| Production 24/7 workloads | Overkill | **Best fit** | Simplest |
+| Cost-sensitive environments | **Best fit** | Good | Expensive |
+| Simplicity priority | More moving parts | **Simpler** | Simplest |
 
-## Resources
+**Use nat-zero** when your private subnet workloads run intermittently and you want to pay nothing when idle.
 
-| Name | Type |
-|------|------|
-| aws_cloudwatch_event_rule.ec2_state_change | resource |
-| aws_cloudwatch_event_target.state_change_lambda_target | resource |
-| aws_cloudwatch_log_group.nat_zero_logs | resource |
-| aws_iam_instance_profile.nat_instance_profile | resource |
-| aws_iam_role.lambda_iam_role | resource |
-| aws_iam_role.nat_instance_role | resource |
-| aws_iam_role_policy.lambda_iam_policy | resource |
-| aws_iam_role_policy_attachment.lambda_basic_policy_attachment | resource |
-| aws_iam_role_policy_attachment.ssm_policy_attachment | resource |
-| aws_lambda_function.nat_zero | resource |
-| aws_lambda_function_event_invoke_config.nat_zero_invoke_config | resource |
-| aws_lambda_permission.allow_ec2_state_change_eventbridge | resource |
-| aws_launch_template.nat_launch_template | resource |
-| aws_network_interface.nat_private_network_interface | resource |
-| aws_network_interface.nat_public_network_interface | resource |
-| aws_route.nat_route | resource |
-| aws_security_group.nat_security_group | resource |
-| aws_sqs_queue.lambda_dlq | resource |
-| archive_file.nat_zero | data source |
+**Use fck-nat** when workloads run 24/7 and you want simplicity with ASG self-healing.
 
-## Inputs
+**Use NAT Gateway** when you prioritize managed simplicity and availability over cost.
 
-| Name | Description | Type | Default | Required |
-|------|-------------|------|---------|:--------:|
-| name | Name prefix for all resources | `string` | n/a | yes |
-| vpc_id | VPC ID where NAT instances will be deployed | `string` | n/a | yes |
-| availability_zones | List of AZs to deploy NAT instances in | `list(string)` | n/a | yes |
-| public_subnets | Public subnet IDs (one per AZ) | `list(string)` | n/a | yes |
-| private_subnets | Private subnet IDs (one per AZ) | `list(string)` | n/a | yes |
-| private_route_table_ids | Route table IDs for private subnets (one per AZ) | `list(string)` | n/a | yes |
-| private_subnets_cidr_blocks | CIDR blocks for private subnets (one per AZ) | `list(string)` | n/a | yes |
-| tags | Additional tags for all resources | `map(string)` | `{}` | no |
-| instance_type | EC2 instance type for NAT instances | `string` | `"t4g.nano"` | no |
-| market_type | `"spot"` or `"on-demand"` | `string` | `"on-demand"` | no |
-| block_device_size | Root volume size in GB | `number` | `2` | no |
-| use_fck_nat_ami | Use the public fck-nat AMI | `bool` | `true` | no |
-| ami_id | Explicit AMI ID (overrides lookup) | `string` | `null` | no |
-| custom_ami_owner | AMI owner account when not using fck-nat | `string` | `null` | no |
-| custom_ami_name_pattern | AMI name pattern when not using fck-nat | `string` | `null` | no |
-| nat_tag_key | Tag key to identify NAT instances | `string` | `"nat-zero:managed"` | no |
-| nat_tag_value | Tag value to identify NAT instances | `string` | `"true"` | no |
-| ignore_tag_key | Tag key to mark instances the Lambda should ignore | `string` | `"nat-zero:ignore"` | no |
-| ignore_tag_value | Tag value to mark instances the Lambda should ignore | `string` | `"true"` | no |
-| log_retention_days | CloudWatch log retention in days | `number` | `14` | no |
+## Important notes
 
-## Outputs
-
-| Name | Description |
-|------|-------------|
-| lambda_function_arn | ARN of the nat-zero Lambda function |
-| lambda_function_name | Name of the nat-zero Lambda function |
-| nat_security_group_ids | Security group IDs (one per AZ) |
-| nat_public_eni_ids | Public ENI IDs (one per AZ) |
-| nat_private_eni_ids | Private ENI IDs (one per AZ) |
-| launch_template_ids | Launch template IDs (one per AZ) |
-| eventbridge_rule_arn | ARN of the EventBridge rule |
-| dlq_arn | ARN of the dead letter queue |
+- **EventBridge scope**: The rule captures all EC2 state changes in the account. The Lambda filters by VPC ID, so it only acts on instances in your target VPC.
+- **Startup delay**: The first workload in an idle AZ waits ~15 seconds for internet. Design startup scripts to retry outbound connections -- most package managers already do.
+- **Dual ENI**: Each AZ gets persistent public + private ENIs that survive instance stop/start cycles.
+- **Dead letter queue**: Failed Lambda invocations go to an SQS DLQ for debugging.
+- **Clean destroy**: A cleanup action terminates Lambda-created NAT instances before Terraform removes ENIs, ensuring clean `terraform destroy`.
 
 ## Contributing
 

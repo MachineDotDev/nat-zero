@@ -1,8 +1,8 @@
 # Integration Tests
 
-The integration tests live in `tests/integration/` and use [Terratest](https://terratest.gruntwork.io/) (Go) to deploy real AWS infrastructure, exercise the Lambda, and tear it down.
+nat-zero is tested against real AWS infrastructure, not mocks. The integration test suite deploys the full module into a live AWS account, launches actual EC2 workloads, verifies that NAT instances come up with working internet connectivity, exercises scale-down and restart, then tears everything down cleanly.
 
-They run in CI via the `terratest` GitHub Actions job against `us-east-1`.
+These tests run in CI on every PR (triggered by adding the `integration-test` label) and take about 5 minutes end-to-end. They use [Terratest](https://terratest.gruntwork.io/) (Go) and run against `us-east-1`.
 
 ## Test Fixture
 
