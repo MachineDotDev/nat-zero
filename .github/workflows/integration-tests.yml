@@ -1,6 +1,11 @@
 name: Integration Tests
 
 on:
+  pull_request:
+    paths:
+      - "*.tf"
+      - "cmd/lambda/**"
+      - "tests/**"
   workflow_dispatch:
 
 concurrency:
