@@ -83,6 +83,13 @@ func TestHandlerNatEvents(t *testing.T) {
 		mock.AllocateAddressFn = func(ctx context.Context, params *ec2.AllocateAddressInput, optFns ...func(*ec2.Options)) (*ec2.AllocateAddressOutput, error) {
 			return &ec2.AllocateAddressOutput{AllocationId: aws.String("eipalloc-1"), PublicIp: aws.String("1.2.3.4")}, nil
 		}
+		mock.DescribeNetworkInterfacesFn = func(ctx context.Context, params *ec2.DescribeNetworkInterfacesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeNetworkInterfacesOutput, error) {
+			return &ec2.DescribeNetworkInterfacesOutput{
+				NetworkInterfaces: []ec2types.NetworkInterface{{
+					NetworkInterfaceId: aws.String("eni-pub1"),
+				}},
+			}, nil
+		}
 		mock.AssociateAddressFn = func(ctx context.Context, params *ec2.AssociateAddressInput, optFns ...func(*ec2.Options)) (*ec2.AssociateAddressOutput, error) {
 			return &ec2.AssociateAddressOutput{}, nil
 		}
@@ -115,6 +122,13 @@ func TestHandlerNatEvents(t *testing.T) {
 		}
 		mock.AllocateAddressFn = func(ctx context.Context, params *ec2.AllocateAddressInput, optFns ...func(*ec2.Options)) (*ec2.AllocateAddressOutput, error) {
 			return &ec2.AllocateAddressOutput{AllocationId: aws.String("eipalloc-1"), PublicIp: aws.String("1.2.3.4")}, nil
+		}
+		mock.DescribeNetworkInterfacesFn = func(ctx context.Context, params *ec2.DescribeNetworkInterfacesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeNetworkInterfacesOutput, error) {
+			return &ec2.DescribeNetworkInterfacesOutput{
+				NetworkInterfaces: []ec2types.NetworkInterface{{
+					NetworkInterfaceId: aws.String("eni-pub1"),
+				}},
+			}, nil
 		}
 		mock.AssociateAddressFn = func(ctx context.Context, params *ec2.AssociateAddressInput, optFns ...func(*ec2.Options)) (*ec2.AssociateAddressOutput, error) {
 			return &ec2.AssociateAddressOutput{}, nil
@@ -165,6 +179,9 @@ func TestHandlerNatEvents(t *testing.T) {
 					},
 				}},
 			}, nil
+		}
+		mock.DescribeAddressesFn = func(ctx context.Context, params *ec2.DescribeAddressesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeAddressesOutput, error) {
+			return &ec2.DescribeAddressesOutput{Addresses: []ec2types.Address{}}, nil
 		}
 		h := newTestHandler(mock)
 		err := h.HandleRequest(context.Background(), Event{InstanceID: "i-nat1", State: "stopped"})

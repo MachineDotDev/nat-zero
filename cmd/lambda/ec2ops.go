@@ -234,6 +234,23 @@ func (h *Handler) attachEIP(ctx context.Context, instanceID, az string) {
 	}
 	allocID := aws.ToString(alloc.AllocationId)
 
+	// Race-detection: re-check ENI before associating. Another invocation may
+	// have already attached an EIP between our first check and AllocateAddress.
+	niResp, descErr := h.EC2.DescribeNetworkInterfaces(ctx, &ec2.DescribeNetworkInterfacesInput{
+		NetworkInterfaceIds: []string{eniID},
+	})
+	if descErr == nil && len(niResp.NetworkInterfaces) > 0 {
+		ni := niResp.NetworkInterfaces[0]
+		if ni.Association != nil && aws.ToString(ni.Association.PublicIp) != "" {
+			log.Printf("Race detected: ENI %s already has EIP %s, releasing %s",
+				eniID, aws.ToString(ni.Association.PublicIp), allocID)
+			h.EC2.ReleaseAddress(ctx, &ec2.ReleaseAddressInput{AllocationId: aws.String(allocID)})
+			return
+		}
+	} else if descErr != nil {
+		log.Printf("Failed to re-check ENI %s (proceeding with associate): %v", eniID, descErr)
+	}
+
 	_, err = h.EC2.AssociateAddress(ctx, &ec2.AssociateAddressInput{
 		AllocationId:       aws.String(allocID),
 		NetworkInterfaceId: aws.String(eniID),
@@ -247,8 +264,9 @@ func (h *Handler) attachEIP(ctx context.Context, instanceID, az string) {
 }
 
 // detachEIP waits for the NAT instance to reach "stopped", then disassociates
-// and releases the EIP from the public ENI. Idempotent: no-op if no EIP.
-func (h *Handler) detachEIP(ctx context.Context, instanceID string) {
+// and releases the EIP from the public ENI. Also sweeps for orphaned EIPs
+// left by concurrent attachEIP races.
+func (h *Handler) detachEIP(ctx context.Context, instanceID, az string) {
 	defer timed("detach_eip")()
 
 	if !h.waitForState(ctx, instanceID, []string{"stopped"}, 120) {
@@ -272,37 +290,63 @@ func (h *Handler) detachEIP(ctx context.Context, instanceID string) {
 		log.Printf("Failed to describe ENI %s: %v", eniID, err)
 		return
 	}
-	if len(niResp.NetworkInterfaces) == 0 {
-		return
-	}
-	ni := niResp.NetworkInterfaces[0]
-	if ni.Association == nil || aws.ToString(ni.Association.AssociationId) == "" {
-		return
-	}
+	if len(niResp.NetworkInterfaces) > 0 {
+		ni := niResp.NetworkInterfaces[0]
+		if ni.Association != nil && aws.ToString(ni.Association.AssociationId) != "" {
+			assocID := aws.ToString(ni.Association.AssociationId)
+			allocID := aws.ToString(ni.Association.AllocationId)
+			publicIP := aws.ToString(ni.Association.PublicIp)
 
-	assocID := aws.ToString(ni.Association.AssociationId)
-	allocID := aws.ToString(ni.Association.AllocationId)
-	publicIP := aws.ToString(ni.Association.PublicIp)
-
-	_, err = h.EC2.DisassociateAddress(ctx, &ec2.DisassociateAddressInput{
-		AssociationId: aws.String(assocID),
-	})
-	if err != nil {
-		if isErrCode(err, "InvalidAssociationID.NotFound") {
-			log.Printf("EIP already disassociated from %s", eniID)
-		} else {
-			log.Printf("Failed to detach EIP from %s: %v", eniID, err)
-			return
+			_, err = h.EC2.DisassociateAddress(ctx, &ec2.DisassociateAddressInput{
+				AssociationId: aws.String(assocID),
+			})
+			if err != nil {
+				if isErrCode(err, "InvalidAssociationID.NotFound") {
+					log.Printf("EIP already disassociated from %s", eniID)
+				} else {
+					log.Printf("Failed to detach EIP from %s: %v", eniID, err)
+					return
+				}
+			}
+			_, err = h.EC2.ReleaseAddress(ctx, &ec2.ReleaseAddressInput{
+				AllocationId: aws.String(allocID),
+			})
+			if err != nil {
+				log.Printf("Failed to release EIP %s: %v", allocID, err)
+			} else {
+				log.Printf("Released EIP %s from %s", publicIP, eniID)
+			}
 		}
 	}
-	_, err = h.EC2.ReleaseAddress(ctx, &ec2.ReleaseAddressInput{
-		AllocationId: aws.String(allocID),
+
+	// Orphan sweep: release any EIPs tagged for this AZ that were left behind
+	// by a concurrent attachEIP race.
+	addrResp, err := h.EC2.DescribeAddresses(ctx, &ec2.DescribeAddressesInput{
+		Filters: []ec2types.Filter{
+			{Name: aws.String("tag:" + h.NATTagKey), Values: []string{h.NATTagValue}},
+			{Name: aws.String("tag:AZ"), Values: []string{az}},
+		},
 	})
 	if err != nil {
-		log.Printf("Failed to release EIP %s: %v", allocID, err)
+		log.Printf("Orphan EIP sweep failed for %s: %v", az, err)
 		return
 	}
-	log.Printf("Released EIP %s from %s", publicIP, eniID)
+	for _, addr := range addrResp.Addresses {
+		orphanAllocID := aws.ToString(addr.AllocationId)
+		if addr.AssociationId != nil {
+			h.EC2.DisassociateAddress(ctx, &ec2.DisassociateAddressInput{
+				AssociationId: addr.AssociationId,
+			})
+		}
+		_, err := h.EC2.ReleaseAddress(ctx, &ec2.ReleaseAddressInput{
+			AllocationId: aws.String(orphanAllocID),
+		})
+		if err != nil {
+			log.Printf("Failed to release orphan EIP %s: %v", orphanAllocID, err)
+		} else {
+			log.Printf("Released orphan EIP %s in %s", orphanAllocID, az)
+		}
+	}
 }
 
 // --- Config version ---

@@ -55,7 +55,7 @@ func (h *Handler) handle(ctx context.Context, event Event) error {
 		if isStarting(state) {
 			h.attachEIP(ctx, iid, az)
 		} else if isStopping(state) {
-			h.detachEIP(ctx, iid)
+			h.detachEIP(ctx, iid, az)
 		}
 		return nil
 	}

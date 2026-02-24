@@ -276,6 +276,13 @@ func TestAttachEIP(t *testing.T) {
 		mock.AllocateAddressFn = func(ctx context.Context, params *ec2.AllocateAddressInput, optFns ...func(*ec2.Options)) (*ec2.AllocateAddressOutput, error) {
 			return &ec2.AllocateAddressOutput{AllocationId: aws.String("eipalloc-1"), PublicIp: aws.String("1.2.3.4")}, nil
 		}
+		mock.DescribeNetworkInterfacesFn = func(ctx context.Context, params *ec2.DescribeNetworkInterfacesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeNetworkInterfacesOutput, error) {
+			return &ec2.DescribeNetworkInterfacesOutput{
+				NetworkInterfaces: []ec2types.NetworkInterface{{
+					NetworkInterfaceId: aws.String("eni-pub1"),
+				}},
+			}, nil
+		}
 		mock.AssociateAddressFn = func(ctx context.Context, params *ec2.AssociateAddressInput, optFns ...func(*ec2.Options)) (*ec2.AssociateAddressOutput, error) {
 			return &ec2.AssociateAddressOutput{}, nil
 		}
@@ -328,6 +335,13 @@ func TestAttachEIP(t *testing.T) {
 		mock.AllocateAddressFn = func(ctx context.Context, params *ec2.AllocateAddressInput, optFns ...func(*ec2.Options)) (*ec2.AllocateAddressOutput, error) {
 			return &ec2.AllocateAddressOutput{AllocationId: aws.String("eipalloc-1"), PublicIp: aws.String("1.2.3.4")}, nil
 		}
+		mock.DescribeNetworkInterfacesFn = func(ctx context.Context, params *ec2.DescribeNetworkInterfacesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeNetworkInterfacesOutput, error) {
+			return &ec2.DescribeNetworkInterfacesOutput{
+				NetworkInterfaces: []ec2types.NetworkInterface{{
+					NetworkInterfaceId: aws.String("eni-pub1"),
+				}},
+			}, nil
+		}
 		mock.AssociateAddressFn = func(ctx context.Context, params *ec2.AssociateAddressInput, optFns ...func(*ec2.Options)) (*ec2.AssociateAddressOutput, error) {
 			return nil, fmt.Errorf("InvalidParameterValue: Bad param")
 		}
@@ -348,6 +362,58 @@ func TestAttachEIP(t *testing.T) {
 		h.attachEIP(context.Background(), "i-nat1", testAZ)
 		if mock.callCount("AllocateAddress") != 0 {
 			t.Error("expected no AllocateAddress when no public ENI")
+		}
+	})
+
+	t.Run("race detected releases allocated EIP", func(t *testing.T) {
+		mock := &mockEC2{}
+		eni := makeENI("eni-pub1", 0, "10.0.1.10", nil)
+		mock.DescribeInstancesFn = func(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+			return describeResponse(makeTestInstance("i-nat1", "running", testVPC, testAZ, nil, []ec2types.InstanceNetworkInterface{eni})), nil
+		}
+		mock.AllocateAddressFn = func(ctx context.Context, params *ec2.AllocateAddressInput, optFns ...func(*ec2.Options)) (*ec2.AllocateAddressOutput, error) {
+			return &ec2.AllocateAddressOutput{AllocationId: aws.String("eipalloc-1"), PublicIp: aws.String("1.2.3.4")}, nil
+		}
+		// Re-check shows another invocation already attached an EIP
+		mock.DescribeNetworkInterfacesFn = func(ctx context.Context, params *ec2.DescribeNetworkInterfacesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeNetworkInterfacesOutput, error) {
+			return &ec2.DescribeNetworkInterfacesOutput{
+				NetworkInterfaces: []ec2types.NetworkInterface{{
+					NetworkInterfaceId: aws.String("eni-pub1"),
+					Association: &ec2types.NetworkInterfaceAssociation{
+						PublicIp: aws.String("9.9.9.9"),
+					},
+				}},
+			}, nil
+		}
+		h := newTestHandler(mock)
+		h.attachEIP(context.Background(), "i-nat1", testAZ)
+		if mock.callCount("AssociateAddress") != 0 {
+			t.Error("expected no AssociateAddress when race detected")
+		}
+		if mock.callCount("ReleaseAddress") != 1 {
+			t.Errorf("expected 1 ReleaseAddress call, got %d", mock.callCount("ReleaseAddress"))
+		}
+	})
+
+	t.Run("describe ENI failure still associates", func(t *testing.T) {
+		mock := &mockEC2{}
+		eni := makeENI("eni-pub1", 0, "10.0.1.10", nil)
+		mock.DescribeInstancesFn = func(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+			return describeResponse(makeTestInstance("i-nat1", "running", testVPC, testAZ, nil, []ec2types.InstanceNetworkInterface{eni})), nil
+		}
+		mock.AllocateAddressFn = func(ctx context.Context, params *ec2.AllocateAddressInput, optFns ...func(*ec2.Options)) (*ec2.AllocateAddressOutput, error) {
+			return &ec2.AllocateAddressOutput{AllocationId: aws.String("eipalloc-1"), PublicIp: aws.String("1.2.3.4")}, nil
+		}
+		mock.DescribeNetworkInterfacesFn = func(ctx context.Context, params *ec2.DescribeNetworkInterfacesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeNetworkInterfacesOutput, error) {
+			return nil, fmt.Errorf("Throttling: Rate exceeded")
+		}
+		mock.AssociateAddressFn = func(ctx context.Context, params *ec2.AssociateAddressInput, optFns ...func(*ec2.Options)) (*ec2.AssociateAddressOutput, error) {
+			return &ec2.AssociateAddressOutput{}, nil
+		}
+		h := newTestHandler(mock)
+		h.attachEIP(context.Background(), "i-nat1", testAZ)
+		if mock.callCount("AssociateAddress") != 1 {
+			t.Error("expected AssociateAddress to proceed despite describe failure")
 		}
 	})
 }
@@ -373,8 +439,11 @@ func TestDetachEIP(t *testing.T) {
 				}},
 			}, nil
 		}
+		mock.DescribeAddressesFn = func(ctx context.Context, params *ec2.DescribeAddressesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeAddressesOutput, error) {
+			return &ec2.DescribeAddressesOutput{Addresses: []ec2types.Address{}}, nil
+		}
 		h := newTestHandler(mock)
-		h.detachEIP(context.Background(), "i-nat1")
+		h.detachEIP(context.Background(), "i-nat1", testAZ)
 		if mock.callCount("DisassociateAddress") != 1 {
 			t.Error("expected DisassociateAddress")
 		}
@@ -396,10 +465,70 @@ func TestDetachEIP(t *testing.T) {
 				}},
 			}, nil
 		}
+		mock.DescribeAddressesFn = func(ctx context.Context, params *ec2.DescribeAddressesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeAddressesOutput, error) {
+			return &ec2.DescribeAddressesOutput{Addresses: []ec2types.Address{}}, nil
+		}
 		h := newTestHandler(mock)
-		h.detachEIP(context.Background(), "i-nat1")
+		h.detachEIP(context.Background(), "i-nat1", testAZ)
 		if mock.callCount("DisassociateAddress") != 0 {
 			t.Error("expected DisassociateAddress NOT to be called")
+		}
+	})
+
+	t.Run("cleans up orphaned EIPs", func(t *testing.T) {
+		mock := &mockEC2{}
+		eni := makeENI("eni-pub1", 0, "10.0.1.10", nil)
+		mock.DescribeInstancesFn = func(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+			return describeResponse(makeTestInstance("i-nat1", "stopped", testVPC, testAZ, nil, []ec2types.InstanceNetworkInterface{eni})), nil
+		}
+		mock.DescribeNetworkInterfacesFn = func(ctx context.Context, params *ec2.DescribeNetworkInterfacesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeNetworkInterfacesOutput, error) {
+			return &ec2.DescribeNetworkInterfacesOutput{
+				NetworkInterfaces: []ec2types.NetworkInterface{{
+					NetworkInterfaceId: aws.String("eni-pub1"),
+					Association: &ec2types.NetworkInterfaceAssociation{
+						AssociationId: aws.String("eipassoc-1"),
+						AllocationId:  aws.String("eipalloc-1"),
+						PublicIp:      aws.String("1.2.3.4"),
+					},
+				}},
+			}, nil
+		}
+		mock.DescribeAddressesFn = func(ctx context.Context, params *ec2.DescribeAddressesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeAddressesOutput, error) {
+			return &ec2.DescribeAddressesOutput{
+				Addresses: []ec2types.Address{{
+					AllocationId: aws.String("eipalloc-orphan"),
+				}},
+			}, nil
+		}
+		h := newTestHandler(mock)
+		h.detachEIP(context.Background(), "i-nat1", testAZ)
+		// 1 from current association + 1 from orphan sweep
+		if mock.callCount("ReleaseAddress") != 2 {
+			t.Errorf("expected 2 ReleaseAddress calls, got %d", mock.callCount("ReleaseAddress"))
+		}
+	})
+
+	t.Run("orphan sweep error is non-fatal", func(t *testing.T) {
+		mock := &mockEC2{}
+		eni := makeENI("eni-pub1", 0, "10.0.1.10", nil)
+		mock.DescribeInstancesFn = func(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+			return describeResponse(makeTestInstance("i-nat1", "stopped", testVPC, testAZ, nil, []ec2types.InstanceNetworkInterface{eni})), nil
+		}
+		mock.DescribeNetworkInterfacesFn = func(ctx context.Context, params *ec2.DescribeNetworkInterfacesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeNetworkInterfacesOutput, error) {
+			return &ec2.DescribeNetworkInterfacesOutput{
+				NetworkInterfaces: []ec2types.NetworkInterface{{
+					NetworkInterfaceId: aws.String("eni-pub1"),
+				}},
+			}, nil
+		}
+		mock.DescribeAddressesFn = func(ctx context.Context, params *ec2.DescribeAddressesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeAddressesOutput, error) {
+			return nil, fmt.Errorf("Throttling: Rate exceeded")
+		}
+		h := newTestHandler(mock)
+		// Should not panic
+		h.detachEIP(context.Background(), "i-nat1", testAZ)
+		if mock.callCount("DisassociateAddress") != 0 {
+			t.Error("expected no DisassociateAddress when no ENI association")
 		}
 	})
 }
