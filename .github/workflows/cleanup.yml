@@ -1,0 +1,117 @@
+name: Cleanup Orphans
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    environment: integration
+    steps:
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ secrets.INTEGRATION_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Delete EventBridge targets and rules
+        run: |
+          for rule in $(aws events list-rules --name-prefix nat-test --query 'Rules[].Name' --output text); do
+            echo "Removing targets from rule: $rule"
+            targets=$(aws events list-targets-by-rule --rule "$rule" --query 'Targets[].Id' --output text)
+            for target in $targets; do
+              aws events remove-targets --rule "$rule" --ids "$target" || true
+            done
+            echo "Deleting rule: $rule"
+            aws events delete-rule --name "$rule" --force || true
+          done
+
+      - name: Delete Lambda functions
+        run: |
+          for fn in $(aws lambda list-functions --query 'Functions[?starts_with(FunctionName, `nat-test`)].FunctionName' --output text); do
+            echo "Deleting Lambda: $fn"
+            aws lambda delete-function --function-name "$fn" || true
+          done
+
+      - name: Delete CloudWatch log groups
+        run: |
+          for lg in $(aws logs describe-log-groups --log-group-name-prefix /aws/lambda/nat-test --query 'logGroups[].logGroupName' --output text); do
+            echo "Deleting log group: $lg"
+            aws logs delete-log-group --log-group-name "$lg" || true
+          done
+
+      - name: Delete launch templates
+        run: |
+          for lt in $(aws ec2 describe-launch-templates --filters "Name=launch-template-name,Values=nat-test-*" --query 'LaunchTemplates[].LaunchTemplateId' --output text); do
+            echo "Deleting launch template: $lt"
+            aws ec2 delete-launch-template --launch-template-id "$lt" || true
+          done
+
+      - name: Delete ENIs
+        run: |
+          for eni in $(aws ec2 describe-network-interfaces --filters "Name=tag:Name,Values=nat-test-*" --query 'NetworkInterfaces[].NetworkInterfaceId' --output text); do
+            echo "Deleting ENI: $eni"
+            aws ec2 delete-network-interface --network-interface-id "$eni" || true
+          done
+
+      - name: Delete security groups
+        run: |
+          for sg in $(aws ec2 describe-security-groups --filters "Name=group-name,Values=nat-test-*" --query 'SecurityGroups[].GroupId' --output text); do
+            echo "Deleting security group: $sg"
+            aws ec2 delete-security-group --group-id "$sg" || true
+          done
+
+      - name: Delete subnets
+        run: |
+          for sub in $(aws ec2 describe-subnets --filters "Name=cidr-block,Values=172.31.128.0/24" --query 'Subnets[].SubnetId' --output text); do
+            echo "Deleting subnet: $sub"
+            aws ec2 delete-subnet --subnet-id "$sub" || true
+          done
+
+      - name: Delete route tables
+        run: |
+          for rt in $(aws ec2 describe-route-tables --filters "Name=tag:Name,Values=nat-zero-test-*" --query 'RouteTables[].RouteTableId' --output text); do
+            echo "Deleting route table: $rt"
+            aws ec2 delete-route-table --route-table-id "$rt" || true
+          done
+
+      - name: Delete IAM instance profiles and roles
+        run: |
+          for profile in $(aws iam list-instance-profiles --query 'InstanceProfiles[?starts_with(InstanceProfileName, `nat-test`)].InstanceProfileName' --output text); do
+            echo "Cleaning up instance profile: $profile"
+            for role in $(aws iam get-instance-profile --instance-profile-name "$profile" --query 'InstanceProfile.Roles[].RoleName' --output text); do
+              aws iam remove-role-from-instance-profile --instance-profile-name "$profile" --role-name "$role" || true
+            done
+            aws iam delete-instance-profile --instance-profile-name "$profile" || true
+          done
+
+          for role in $(aws iam list-roles --query 'Roles[?starts_with(RoleName, `nat-test`)].RoleName' --output text); do
+            echo "Cleaning up role: $role"
+            for policy in $(aws iam list-role-policies --role-name "$role" --query 'PolicyNames[]' --output text); do
+              aws iam delete-role-policy --role-name "$role" --policy-name "$policy" || true
+            done
+            for arn in $(aws iam list-attached-role-policies --role-name "$role" --query 'AttachedPolicies[].PolicyArn' --output text); do
+              aws iam detach-role-policy --role-name "$role" --policy-arn "$arn" || true
+            done
+            aws iam delete-role --role-name "$role" || true
+          done
+
+      - name: Delete EIPs
+        run: |
+          for alloc in $(aws ec2 describe-addresses --filters "Name=tag:nat-zero:managed,Values=true" --query 'Addresses[].AllocationId' --output text); do
+            echo "Releasing EIP: $alloc"
+            aws ec2 release-address --allocation-id "$alloc" || true
+          done
+
+      - name: Delete SQS queues
+        run: |
+          for url in $(aws sqs list-queues --queue-name-prefix nat-test --query 'QueueUrls[]' --output text 2>/dev/null); do
+            echo "Deleting queue: $url"
+            aws sqs delete-queue --queue-url "$url" || true
+          done
+
+      - name: Summary
+        run: echo "Cleanup complete"
