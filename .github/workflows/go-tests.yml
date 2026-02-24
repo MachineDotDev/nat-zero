@@ -1,0 +1,29 @@
+name: Go Tests
+
+on:
+  pull_request:
+    paths:
+      - "cmd/lambda/**"
+  push:
+    branches: [main]
+    paths:
+      - "cmd/lambda/**"
+
+permissions:
+  contents: read
+
+jobs:
+  go-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cmd/lambda
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: cmd/lambda/go.mod
+
+      - name: Test
+        run: go test -v -race ./...
