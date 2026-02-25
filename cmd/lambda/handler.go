@@ -47,6 +47,13 @@ func (h *Handler) handle(ctx context.Context, event Event) error {
 
 	ignore, isNAT, az, vpc := h.classify(ctx, iid)
 	if ignore {
+		// If the instance can no longer be found (e.g. terminated and gone
+		// from the API), fall back to a VPC-wide sweep so we don't miss the
+		// scale-down opportunity.
+		if isTerminating(state) {
+			log.Printf("Instance %s gone (state=%s), sweeping for idle NATs", iid, state)
+			h.sweepIdleNATs(ctx, iid)
+		}
 		return nil
 	}
 
@@ -69,7 +76,7 @@ func (h *Handler) handle(ctx context.Context, event Event) error {
 	}
 
 	if isStopping(state) || isTerminating(state) {
-		h.maybeStopNAT(ctx, nat, az, vpc)
+		h.maybeStopNAT(ctx, nat, az, vpc, iid)
 	}
 	return nil
 }
@@ -97,19 +104,29 @@ func (h *Handler) ensureNAT(ctx context.Context, nat *Instance, az, vpc string) 
 }
 
 // maybeStopNAT stops the NAT if no sibling workloads remain.
-func (h *Handler) maybeStopNAT(ctx context.Context, nat *Instance, az, vpc string) {
+// triggerID is the instance whose state change triggered this check; it is
+// excluded from the sibling query so that a dying workload doesn't count
+// itself as a reason to keep the NAT alive.
+func (h *Handler) maybeStopNAT(ctx context.Context, nat *Instance, az, vpc, triggerID string) {
 	if nat == nil {
 		return
 	}
-	// Brief retry to let concurrent events settle.
+	// Retry to let EC2 API eventual consistency settle.
+	// Sleep before each check so DescribeInstances reflects the latest state.
+	var siblings []*Instance
 	for attempt := 0; attempt < 3; attempt++ {
-		if len(h.findSiblings(ctx, az, vpc)) > 0 {
-			log.Printf("Siblings still running in %s, keeping NAT", az)
-			return
-		}
-		if attempt < 2 {
+		if attempt > 0 {
 			h.sleep(2 * time.Second)
 		}
+		siblings = h.findSiblings(ctx, az, vpc, triggerID)
+		if len(siblings) == 0 {
+			break
+		}
+		log.Printf("Siblings found in %s (attempt %d/3), rechecking", az, attempt+1)
+	}
+	if len(siblings) > 0 {
+		log.Printf("Siblings still running in %s after retries, keeping NAT", az)
+		return
 	}
 
 	if isStarting(nat.StateName) {

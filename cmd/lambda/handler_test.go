@@ -66,6 +66,52 @@ func TestHandlerIgnored(t *testing.T) {
 			t.Errorf("expected 1 DescribeInstances call (classify), got %d", mock.callCount("DescribeInstances"))
 		}
 	})
+
+	t.Run("terminated event sweeps idle NATs when instance gone", func(t *testing.T) {
+		mock := &mockEC2{}
+		natTags := []ec2types.Tag{{Key: aws.String("nat-zero:managed"), Value: aws.String("true")}}
+		natInst := makeTestInstance("i-nat1", "running", testVPC, testAZ, natTags, nil)
+		var callIdx int32
+		mock.DescribeInstancesFn = func(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+			idx := atomic.AddInt32(&callIdx, 1)
+			if idx == 1 {
+				// classify: instance not found (already gone from API)
+				return describeResponse(), nil
+			}
+			if params.Filters != nil {
+				for _, f := range params.Filters {
+					if aws.ToString(f.Name) == "tag:nat-zero:managed" {
+						return describeResponse(natInst), nil
+					}
+				}
+			}
+			// findSiblings: no siblings
+			return describeResponse(), nil
+		}
+		h := newTestHandler(mock)
+		err := h.HandleRequest(context.Background(), Event{InstanceID: "i-gone", State: "terminated"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if mock.callCount("StopInstances") != 1 {
+			t.Errorf("expected StopInstances via sweep, got %d", mock.callCount("StopInstances"))
+		}
+	})
+
+	t.Run("non-terminating ignored event does not sweep", func(t *testing.T) {
+		mock := &mockEC2{}
+		mock.DescribeInstancesFn = func(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+			return describeResponse(), nil
+		}
+		h := newTestHandler(mock)
+		err := h.HandleRequest(context.Background(), Event{InstanceID: "i-skip", State: "running"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if mock.callCount("StopInstances") != 0 {
+			t.Error("expected no sweep for non-terminating event")
+		}
+	})
 }
 
 // --- NAT instance events (EventBridge-driven EIP management) ---
@@ -525,13 +571,12 @@ func TestHandlerWorkloadScaleDown(t *testing.T) {
 		}
 	})
 
-	t.Run("siblings appear on retry", func(t *testing.T) {
+	t.Run("persistent siblings keeps NAT after retries", func(t *testing.T) {
 		mock := &mockEC2{}
 		workInst := makeTestInstance("i-work1", "stopping", testVPC, testAZ, workTags, nil)
 		natInst := makeTestInstance("i-nat1", "running", testVPC, testAZ, natTags, nil)
 		sibInst := makeTestInstance("i-sib1", "running", testVPC, testAZ, workTags, nil)
 		var callIdx int32
-		var sibCallIdx int32
 		mock.DescribeInstancesFn = func(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
 			idx := atomic.AddInt32(&callIdx, 1)
 			if idx == 1 {
@@ -544,10 +589,7 @@ func TestHandlerWorkloadScaleDown(t *testing.T) {
 					}
 				}
 			}
-			sibIdx := atomic.AddInt32(&sibCallIdx, 1)
-			if sibIdx == 1 {
-				return describeResponse(), nil
-			}
+			// All findSiblings calls return a sibling
 			return describeResponse(sibInst), nil
 		}
 		h := newTestHandler(mock)
@@ -557,6 +599,39 @@ func TestHandlerWorkloadScaleDown(t *testing.T) {
 		}
 		if mock.callCount("StopInstances") != 0 {
 			t.Error("expected StopInstances NOT to be called")
+		}
+	})
+
+	t.Run("trigger instance excluded from siblings", func(t *testing.T) {
+		mock := &mockEC2{}
+		// The trigger workload still shows as "running" due to EC2 eventual consistency
+		workInst := makeTestInstance("i-work1", "running", testVPC, testAZ, workTags, nil)
+		natInst := makeTestInstance("i-nat1", "running", testVPC, testAZ, natTags, nil)
+		var callIdx int32
+		mock.DescribeInstancesFn = func(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+			idx := atomic.AddInt32(&callIdx, 1)
+			if idx == 1 {
+				// classify: the trigger instance
+				return describeResponse(workInst), nil
+			}
+			if params.Filters != nil {
+				for _, f := range params.Filters {
+					if aws.ToString(f.Name) == "tag:nat-zero:managed" {
+						return describeResponse(natInst), nil
+					}
+				}
+			}
+			// findSiblings: the trigger instance shows as running (eventual consistency)
+			// but should be excluded by its ID
+			return describeResponse(workInst), nil
+		}
+		h := newTestHandler(mock)
+		err := h.HandleRequest(context.Background(), Event{InstanceID: "i-work1", State: "shutting-down"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if mock.callCount("StopInstances") != 1 {
+			t.Errorf("expected StopInstances (trigger excluded from siblings), got %d", mock.callCount("StopInstances"))
 		}
 	})
 

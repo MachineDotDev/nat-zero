@@ -225,7 +225,7 @@ func TestFindSiblings(t *testing.T) {
 			return describeResponse(), nil
 		}
 		h := newTestHandler(mock)
-		sibs := h.findSiblings(context.Background(), testAZ, testVPC)
+		sibs := h.findSiblings(context.Background(), testAZ, testVPC, "")
 		if len(sibs) != 0 {
 			t.Errorf("expected 0 siblings, got %d", len(sibs))
 		}
@@ -239,7 +239,7 @@ func TestFindSiblings(t *testing.T) {
 			return describeResponse(work), nil
 		}
 		h := newTestHandler(mock)
-		sibs := h.findSiblings(context.Background(), testAZ, testVPC)
+		sibs := h.findSiblings(context.Background(), testAZ, testVPC, "")
 		if len(sibs) != 1 || sibs[0].InstanceID != "i-work" {
 			t.Errorf("expected [i-work], got %v", sibs)
 		}
@@ -257,9 +257,39 @@ func TestFindSiblings(t *testing.T) {
 			return describeResponse(work, nat, ignored), nil
 		}
 		h := newTestHandler(mock)
-		sibs := h.findSiblings(context.Background(), testAZ, testVPC)
+		sibs := h.findSiblings(context.Background(), testAZ, testVPC, "")
 		if len(sibs) != 1 || sibs[0].InstanceID != "i-work" {
 			t.Errorf("expected [i-work], got %v", sibs)
+		}
+	})
+
+	t.Run("excludes trigger instance", func(t *testing.T) {
+		mock := &mockEC2{}
+		trigger := makeTestInstance("i-dying", "running", testVPC, testAZ,
+			[]ec2types.Tag{{Key: aws.String("App"), Value: aws.String("api")}}, nil)
+		other := makeTestInstance("i-alive", "running", testVPC, testAZ,
+			[]ec2types.Tag{{Key: aws.String("App"), Value: aws.String("web")}}, nil)
+		mock.DescribeInstancesFn = func(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+			return describeResponse(trigger, other), nil
+		}
+		h := newTestHandler(mock)
+		sibs := h.findSiblings(context.Background(), testAZ, testVPC, "i-dying")
+		if len(sibs) != 1 || sibs[0].InstanceID != "i-alive" {
+			t.Errorf("expected [i-alive], got %v", sibs)
+		}
+	})
+
+	t.Run("excludes trigger when it is only instance", func(t *testing.T) {
+		mock := &mockEC2{}
+		trigger := makeTestInstance("i-dying", "running", testVPC, testAZ,
+			[]ec2types.Tag{{Key: aws.String("App"), Value: aws.String("api")}}, nil)
+		mock.DescribeInstancesFn = func(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+			return describeResponse(trigger), nil
+		}
+		h := newTestHandler(mock)
+		sibs := h.findSiblings(context.Background(), testAZ, testVPC, "i-dying")
+		if len(sibs) != 0 {
+			t.Errorf("expected 0 siblings, got %d", len(sibs))
 		}
 	})
 }
@@ -685,8 +715,14 @@ func TestStartNAT(t *testing.T) {
 // --- stopNAT() ---
 
 func TestStopNAT(t *testing.T) {
-	t.Run("happy path just stops", func(t *testing.T) {
+	t.Run("happy path uses force stop", func(t *testing.T) {
 		mock := &mockEC2{}
+		mock.StopInstancesFn = func(ctx context.Context, params *ec2.StopInstancesInput, optFns ...func(*ec2.Options)) (*ec2.StopInstancesOutput, error) {
+			if params.Force == nil || !*params.Force {
+				t.Error("expected Force=true in StopInstances")
+			}
+			return &ec2.StopInstancesOutput{}, nil
+		}
 		h := newTestHandler(mock)
 		h.stopNAT(context.Background(), &Instance{InstanceID: "i-nat1"})
 		if mock.callCount("StopInstances") != 1 {
@@ -705,6 +741,86 @@ func TestStopNAT(t *testing.T) {
 		}
 		h := newTestHandler(mock)
 		h.stopNAT(context.Background(), &Instance{InstanceID: "i-nat1"})
+	})
+}
+
+// --- sweepIdleNATs() ---
+
+func TestSweepIdleNATs(t *testing.T) {
+	natTags := []ec2types.Tag{{Key: aws.String("nat-zero:managed"), Value: aws.String("true")}}
+
+	t.Run("stops NAT with no siblings", func(t *testing.T) {
+		mock := &mockEC2{}
+		natInst := makeTestInstance("i-nat1", "running", testVPC, testAZ, natTags, nil)
+		var callIdx int32
+		mock.DescribeInstancesFn = func(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+			idx := atomic.AddInt32(&callIdx, 1)
+			if idx == 1 {
+				// sweep query: find running NATs
+				return describeResponse(natInst), nil
+			}
+			// findSiblings query: no siblings
+			return describeResponse(), nil
+		}
+		h := newTestHandler(mock)
+		h.sweepIdleNATs(context.Background(), "i-trigger")
+		if mock.callCount("StopInstances") != 1 {
+			t.Errorf("expected StopInstances to be called once, got %d", mock.callCount("StopInstances"))
+		}
+	})
+
+	t.Run("keeps NAT with siblings", func(t *testing.T) {
+		mock := &mockEC2{}
+		natInst := makeTestInstance("i-nat1", "running", testVPC, testAZ, natTags, nil)
+		sibInst := makeTestInstance("i-sib1", "running", testVPC, testAZ,
+			[]ec2types.Tag{{Key: aws.String("App"), Value: aws.String("web")}}, nil)
+		var callIdx int32
+		mock.DescribeInstancesFn = func(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+			idx := atomic.AddInt32(&callIdx, 1)
+			if idx == 1 {
+				return describeResponse(natInst), nil
+			}
+			return describeResponse(sibInst), nil
+		}
+		h := newTestHandler(mock)
+		h.sweepIdleNATs(context.Background(), "i-trigger")
+		if mock.callCount("StopInstances") != 0 {
+			t.Error("expected StopInstances NOT to be called")
+		}
+	})
+
+	t.Run("excludes trigger from siblings", func(t *testing.T) {
+		mock := &mockEC2{}
+		natInst := makeTestInstance("i-nat1", "running", testVPC, testAZ, natTags, nil)
+		// The trigger instance still appears as running (EC2 eventual consistency)
+		triggerInst := makeTestInstance("i-trigger", "running", testVPC, testAZ,
+			[]ec2types.Tag{{Key: aws.String("App"), Value: aws.String("web")}}, nil)
+		var callIdx int32
+		mock.DescribeInstancesFn = func(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+			idx := atomic.AddInt32(&callIdx, 1)
+			if idx == 1 {
+				return describeResponse(natInst), nil
+			}
+			// findSiblings returns the trigger instance (but it should be excluded)
+			return describeResponse(triggerInst), nil
+		}
+		h := newTestHandler(mock)
+		h.sweepIdleNATs(context.Background(), "i-trigger")
+		if mock.callCount("StopInstances") != 1 {
+			t.Errorf("expected StopInstances (trigger should be excluded), got %d", mock.callCount("StopInstances"))
+		}
+	})
+
+	t.Run("no running NATs is noop", func(t *testing.T) {
+		mock := &mockEC2{}
+		mock.DescribeInstancesFn = func(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+			return describeResponse(), nil
+		}
+		h := newTestHandler(mock)
+		h.sweepIdleNATs(context.Background(), "i-trigger")
+		if mock.callCount("StopInstances") != 0 {
+			t.Error("expected no StopInstances calls")
+		}
 	})
 }
 

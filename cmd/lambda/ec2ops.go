@@ -152,7 +152,7 @@ func (h *Handler) findNAT(ctx context.Context, az, vpc string) *Instance {
 	return keep
 }
 
-func (h *Handler) findSiblings(ctx context.Context, az, vpc string) []*Instance {
+func (h *Handler) findSiblings(ctx context.Context, az, vpc, excludeID string) []*Instance {
 	defer timed("find_siblings")()
 	resp, err := h.EC2.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
 		Filters: []ec2types.Filter{
@@ -170,6 +170,9 @@ func (h *Handler) findSiblings(ctx context.Context, az, vpc string) []*Instance 
 	for _, r := range resp.Reservations {
 		for _, i := range r.Instances {
 			inst := instanceFromAPI(i)
+			if inst.InstanceID == excludeID {
+				continue
+			}
 			if !hasTag(inst.Tags, h.NATTagKey, h.NATTagValue) &&
 				!hasTag(inst.Tags, h.IgnoreTagKey, h.IgnoreTagValue) {
 				siblings = append(siblings, inst)
@@ -535,12 +538,40 @@ func (h *Handler) stopNAT(ctx context.Context, inst *Instance) {
 	iid := inst.InstanceID
 	_, err := h.EC2.StopInstances(ctx, &ec2.StopInstancesInput{
 		InstanceIds: []string{iid},
+		Force:       aws.Bool(true),
 	})
 	if err != nil {
 		log.Printf("Failed to stop NAT %s: %v", iid, err)
 		return
 	}
 	log.Printf("Stopped NAT %s", iid)
+}
+
+// sweepIdleNATs is a fallback for when classify can't find the triggering
+// instance (e.g. it's already gone from the EC2 API after termination).
+// It checks every running NAT in the VPC and stops any with no siblings.
+func (h *Handler) sweepIdleNATs(ctx context.Context, triggerID string) {
+	defer timed("sweep_idle_nats")()
+	resp, err := h.EC2.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
+		Filters: []ec2types.Filter{
+			{Name: aws.String("tag:" + h.NATTagKey), Values: []string{h.NATTagValue}},
+			{Name: aws.String("vpc-id"), Values: []string{h.TargetVPC}},
+			{Name: aws.String("instance-state-name"), Values: []string{"pending", "running"}},
+		},
+	})
+	if err != nil {
+		log.Printf("Sweep failed: %v", err)
+		return
+	}
+	for _, r := range resp.Reservations {
+		for _, i := range r.Instances {
+			nat := instanceFromAPI(i)
+			if len(h.findSiblings(ctx, nat.AZ, nat.VpcID, triggerID)) == 0 {
+				log.Printf("Sweep: no siblings for NAT %s in %s, stopping", nat.InstanceID, nat.AZ)
+				h.stopNAT(ctx, nat)
+			}
+		}
+	}
 }
 
 // --- Cleanup (destroy-time) ---
