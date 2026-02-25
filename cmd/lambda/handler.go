@@ -47,7 +47,7 @@ func (h *Handler) handle(ctx context.Context, event Event) error {
 		return nil
 	}
 
-	h.reconcile(ctx, az, vpc)
+	h.reconcile(ctx, az, vpc, event)
 	return nil
 }
 
@@ -73,13 +73,13 @@ func (h *Handler) sweepAllAZs(ctx context.Context) {
 	defer timed("sweep_all_azs")()
 	azs := h.findConfiguredAZs(ctx)
 	for _, az := range azs {
-		h.reconcile(ctx, az, h.TargetVPC)
+		h.reconcile(ctx, az, h.TargetVPC, Event{})
 	}
 }
 
 // reconcile observes the current state of workloads, NAT, and EIPs in an AZ,
 // then takes at most one mutating action to converge toward the desired state.
-func (h *Handler) reconcile(ctx context.Context, az, vpc string) {
+func (h *Handler) reconcile(ctx context.Context, az, vpc string, event Event) {
 	defer timed("reconcile")()
 
 	workloads := h.findWorkloads(ctx, az, vpc)
@@ -119,7 +119,18 @@ func (h *Handler) reconcile(ctx context.Context, az, vpc string) {
 			log.Printf("NAT %s is stopping, waiting for next event", nat.InstanceID)
 			return
 		}
-		// nat is pending or running — good
+		// nat is pending or running — good.
+		// If the NAT appears "pending" from filters but the EventBridge event
+		// says it's "running", re-query by instance ID for authoritative state.
+		// Filter-based DescribeInstances is subject to EC2 eventual consistency
+		// and may lag behind the actual state transition.
+		if nat.StateName == "pending" && event.InstanceID == nat.InstanceID && event.State == "running" {
+			log.Printf("NAT %s shows pending in filters but event says running, re-querying", nat.InstanceID)
+			fresh := h.getInstance(ctx, nat.InstanceID)
+			if fresh != nil {
+				nat = fresh
+			}
+		}
 	} else {
 		if nat != nil && (nat.StateName == "running" || nat.StateName == "pending") {
 			log.Printf("No workloads in %s, stopping NAT %s", az, nat.InstanceID)

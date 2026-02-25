@@ -605,6 +605,50 @@ func TestReconcileNATEvent(t *testing.T) {
 		}
 	})
 
+	t.Run("NAT running event with stale pending filter attaches EIP", func(t *testing.T) {
+		// Simulates EC2 eventual consistency: EventBridge says "running" but
+		// filter-based DescribeInstances still returns "pending". The reconciler
+		// should re-query by instance ID and get the true "running" state.
+		mock := &mockEC2{}
+		workInst := makeTestInstance("i-work1", "running", testVPC, testAZ, workTags, nil)
+		eni := makeENI("eni-pub1", 0, "10.0.1.10", nil)
+		natPending := makeTestInstance("i-nat1", "pending", testVPC, testAZ, natTags, []ec2types.InstanceNetworkInterface{eni})
+		natRunning := makeTestInstance("i-nat1", "running", testVPC, testAZ, natTags, []ec2types.InstanceNetworkInterface{eni})
+		mock.DescribeInstancesFn = func(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+			if len(params.InstanceIds) > 0 {
+				// By-ID queries return the true state
+				return describeResponse(natRunning), nil
+			}
+			for _, f := range params.Filters {
+				if aws.ToString(f.Name) == "tag:nat-zero:managed" {
+					// Filter query lags — still shows pending
+					return describeResponse(natPending), nil
+				}
+			}
+			return describeResponse(workInst), nil
+		}
+		mock.DescribeAddressesFn = func(ctx context.Context, params *ec2.DescribeAddressesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeAddressesOutput, error) {
+			return &ec2.DescribeAddressesOutput{}, nil
+		}
+		mock.AllocateAddressFn = func(ctx context.Context, params *ec2.AllocateAddressInput, optFns ...func(*ec2.Options)) (*ec2.AllocateAddressOutput, error) {
+			return &ec2.AllocateAddressOutput{AllocationId: aws.String("eipalloc-1"), PublicIp: aws.String("1.2.3.4")}, nil
+		}
+		mock.AssociateAddressFn = func(ctx context.Context, params *ec2.AssociateAddressInput, optFns ...func(*ec2.Options)) (*ec2.AssociateAddressOutput, error) {
+			return &ec2.AssociateAddressOutput{}, nil
+		}
+		h := newTestHandler(mock)
+		err := h.HandleRequest(context.Background(), Event{InstanceID: "i-nat1", State: "running"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if mock.callCount("AllocateAddress") != 1 {
+			t.Errorf("expected AllocateAddress=1, got %d (stale pending should be corrected via by-ID query)", mock.callCount("AllocateAddress"))
+		}
+		if mock.callCount("AssociateAddress") != 1 {
+			t.Errorf("expected AssociateAddress=1, got %d", mock.callCount("AssociateAddress"))
+		}
+	})
+
 	t.Run("NAT terminated event with workloads creates new", func(t *testing.T) {
 		mock := &mockEC2{}
 		workInst := makeTestInstance("i-work1", "running", testVPC, testAZ, workTags, nil)
