@@ -481,9 +481,9 @@ type apiError struct {
 	message string
 }
 
-func (e *apiError) Error() string            { return e.message }
-func (e *apiError) ErrorCode() string        { return e.code }
-func (e *apiError) ErrorMessage() string     { return e.message }
+func (e *apiError) Error() string                 { return e.message }
+func (e *apiError) ErrorCode() string             { return e.code }
+func (e *apiError) ErrorMessage() string          { return e.message }
 func (e *apiError) ErrorFault() smithy.ErrorFault { return smithy.FaultServer }
 
 // Ensure apiError satisfies the smithy.APIError interface.
