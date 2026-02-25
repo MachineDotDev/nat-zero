@@ -52,16 +52,17 @@ resource "null_resource" "build_lambda" {
 }
 
 resource "aws_lambda_function" "nat_zero" {
-  filename         = "${path.module}/.build/lambda.zip"
-  function_name    = "${var.name}-nat-zero"
-  handler          = "bootstrap"
-  role             = aws_iam_role.lambda_iam_role.arn
-  runtime          = "provided.al2023"
-  source_code_hash = fileexists("${path.module}/.build/lambda.zip") ? filebase64sha256("${path.module}/.build/lambda.zip") : null
-  architectures    = ["arm64"]
-  timeout          = 300
-  memory_size      = var.lambda_memory_size
-  tags             = local.common_tags
+  filename                       = "${path.module}/.build/lambda.zip"
+  function_name                  = "${var.name}-nat-zero"
+  handler                        = "bootstrap"
+  role                           = aws_iam_role.lambda_iam_role.arn
+  runtime                        = "provided.al2023"
+  source_code_hash               = fileexists("${path.module}/.build/lambda.zip") ? filebase64sha256("${path.module}/.build/lambda.zip") : null
+  architectures                  = ["arm64"]
+  timeout                        = 30
+  reserved_concurrent_executions = 1
+  memory_size                    = var.lambda_memory_size
+  tags                           = local.common_tags
 
   environment {
     variables = {

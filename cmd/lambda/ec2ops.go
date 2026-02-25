@@ -7,7 +7,6 @@ import (
 	"log"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -63,42 +62,43 @@ func (h *Handler) getInstance(ctx context.Context, instanceID string) *Instance 
 	return instanceFromAPI(resp.Reservations[0].Instances[0])
 }
 
-func (h *Handler) classify(ctx context.Context, instanceID string) (ignore, isNAT bool, az, vpc string) {
-	defer timed("classify")()
-	inst := h.getInstance(ctx, instanceID)
-	if inst == nil {
-		return true, false, "", ""
-	}
-	if inst.VpcID != h.TargetVPC {
-		return true, false, "", ""
-	}
-	if hasTag(inst.Tags, h.IgnoreTagKey, h.IgnoreTagValue) {
-		return true, false, inst.AZ, inst.VpcID
-	}
-	return false, hasTag(inst.Tags, h.NATTagKey, h.NATTagValue), inst.AZ, inst.VpcID
-}
+// --- Reconciliation queries ---
 
-func (h *Handler) waitForState(ctx context.Context, instanceID string, states []string, timeout int) bool {
-	iterations := timeout / 2
-	for i := 0; i < iterations; i++ {
-		inst := h.getInstance(ctx, instanceID)
-		if inst == nil {
-			return false
-		}
-		for _, s := range states {
-			if inst.StateName == s {
-				return true
+// findWorkloads returns all pending/running instances in the AZ that are not
+// NAT instances and not ignored.
+func (h *Handler) findWorkloads(ctx context.Context, az, vpc string) []*Instance {
+	defer timed("find_workloads")()
+	resp, err := h.EC2.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
+		Filters: []ec2types.Filter{
+			{Name: aws.String("availability-zone"), Values: []string{az}},
+			{Name: aws.String("vpc-id"), Values: []string{vpc}},
+			{Name: aws.String("instance-state-name"), Values: []string{"pending", "running"}},
+		},
+	})
+	if err != nil {
+		log.Printf("Error finding workloads: %v", err)
+		return nil
+	}
+
+	var workloads []*Instance
+	for _, r := range resp.Reservations {
+		for _, i := range r.Instances {
+			inst := instanceFromAPI(i)
+			if hasTag(inst.Tags, h.NATTagKey, h.NATTagValue) {
+				continue
 			}
+			if hasTag(inst.Tags, h.IgnoreTagKey, h.IgnoreTagValue) {
+				continue
+			}
+			workloads = append(workloads, inst)
 		}
-		h.sleep(2 * time.Second)
 	}
-	log.Printf("Timeout: %s never reached %v", instanceID, states)
-	return false
+	return workloads
 }
 
-// findNAT finds the NAT instance in an AZ. Deduplicates if multiple exist.
-func (h *Handler) findNAT(ctx context.Context, az, vpc string) *Instance {
-	defer timed("find_nat")()
+// findNATs returns all NAT instances in an AZ (any non-terminated state).
+func (h *Handler) findNATs(ctx context.Context, az, vpc string) []*Instance {
+	defer timed("find_nats")()
 	resp, err := h.EC2.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
 		Filters: []ec2types.Filter{
 			{Name: aws.String("tag:" + h.NATTagKey), Values: []string{h.NATTagValue}},
@@ -108,7 +108,7 @@ func (h *Handler) findNAT(ctx context.Context, az, vpc string) *Instance {
 		},
 	})
 	if err != nil {
-		log.Printf("Error finding NAT: %v", err)
+		log.Printf("Error finding NATs: %v", err)
 		return nil
 	}
 
@@ -118,19 +118,59 @@ func (h *Handler) findNAT(ctx context.Context, az, vpc string) *Instance {
 			nats = append(nats, instanceFromAPI(i))
 		}
 	}
+	return nats
+}
 
-	if len(nats) == 0 {
+// findEIPs returns all EIPs tagged for this AZ.
+func (h *Handler) findEIPs(ctx context.Context, az string) []ec2types.Address {
+	defer timed("find_eips")()
+	resp, err := h.EC2.DescribeAddresses(ctx, &ec2.DescribeAddressesInput{
+		Filters: []ec2types.Filter{
+			{Name: aws.String("tag:" + h.NATTagKey), Values: []string{h.NATTagValue}},
+			{Name: aws.String("tag:AZ"), Values: []string{az}},
+		},
+	})
+	if err != nil {
+		log.Printf("Error finding EIPs: %v", err)
 		return nil
 	}
-	if len(nats) == 1 {
-		return nats[0]
+	return resp.Addresses
+}
+
+// findConfiguredAZs returns the AZs that have a launch template configured.
+func (h *Handler) findConfiguredAZs(ctx context.Context) []string {
+	defer timed("find_configured_azs")()
+	resp, err := h.EC2.DescribeLaunchTemplates(ctx, &ec2.DescribeLaunchTemplatesInput{
+		Filters: []ec2types.Filter{
+			{Name: aws.String("tag:VpcId"), Values: []string{h.TargetVPC}},
+		},
+	})
+	if err != nil || len(resp.LaunchTemplates) == 0 {
+		return nil
 	}
 
-	// Race condition: multiple NATs. Keep the running one, terminate extras.
-	log.Printf("%d NAT instances in %s, deduplicating", len(nats), az)
+	var azs []string
+	for _, lt := range resp.LaunchTemplates {
+		for _, tag := range lt.Tags {
+			if aws.ToString(tag.Key) == "AvailabilityZone" {
+				azs = append(azs, aws.ToString(tag.Value))
+			}
+		}
+	}
+	return azs
+}
+
+// --- Reconciliation actions ---
+
+// terminateDuplicateNATs keeps the best NAT (prefer running) and terminates the rest.
+// Returns the kept NAT as a single-element slice.
+func (h *Handler) terminateDuplicateNATs(ctx context.Context, nats []*Instance) []*Instance {
+	log.Printf("%d NAT instances found, deduplicating", len(nats))
+
+	// Prefer running instances.
 	var running []*Instance
 	for _, n := range nats {
-		if isStarting(n.StateName) {
+		if n.StateName == "pending" || n.StateName == "running" {
 			running = append(running, n)
 		}
 	}
@@ -138,87 +178,65 @@ func (h *Handler) findNAT(ctx context.Context, az, vpc string) *Instance {
 	if len(running) > 0 {
 		keep = running[0]
 	}
+
 	for _, n := range nats {
 		if n.InstanceID != keep.InstanceID {
 			log.Printf("Terminating duplicate NAT %s", n.InstanceID)
-			_, err := h.EC2.TerminateInstances(ctx, &ec2.TerminateInstancesInput{
-				InstanceIds: []string{n.InstanceID},
-			})
-			if err != nil {
-				log.Printf("Failed to terminate %s: %v", n.InstanceID, err)
-			}
+			h.terminateInstance(ctx, n.InstanceID)
 		}
 	}
-	return keep
+	return []*Instance{keep}
 }
 
-func (h *Handler) findSiblings(ctx context.Context, az, vpc, excludeID string) []*Instance {
-	defer timed("find_siblings")()
-	resp, err := h.EC2.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
-		Filters: []ec2types.Filter{
-			{Name: aws.String("availability-zone"), Values: []string{az}},
-			{Name: aws.String("vpc-id"), Values: []string{vpc}},
-			{Name: aws.String("instance-state-name"), Values: []string{"pending", "running"}},
-		},
+func (h *Handler) terminateInstance(ctx context.Context, instanceID string) {
+	_, err := h.EC2.TerminateInstances(ctx, &ec2.TerminateInstancesInput{
+		InstanceIds: []string{instanceID},
 	})
 	if err != nil {
-		log.Printf("Error finding siblings: %v", err)
-		return nil
+		log.Printf("Failed to terminate %s: %v", instanceID, err)
 	}
-
-	var siblings []*Instance
-	for _, r := range resp.Reservations {
-		for _, i := range r.Instances {
-			inst := instanceFromAPI(i)
-			if inst.InstanceID == excludeID {
-				continue
-			}
-			if !hasTag(inst.Tags, h.NATTagKey, h.NATTagValue) &&
-				!hasTag(inst.Tags, h.IgnoreTagKey, h.IgnoreTagValue) {
-				siblings = append(siblings, inst)
-			}
-		}
-	}
-	return siblings
 }
 
-// --- EIP management (EventBridge-driven) ---
-
-func getPublicENI(inst *Instance) *ec2types.InstanceNetworkInterface {
-	for i := range inst.NetworkInterfaces {
-		if aws.ToInt32(inst.NetworkInterfaces[i].Attachment.DeviceIndex) == 0 {
-			return &inst.NetworkInterfaces[i]
-		}
+func (h *Handler) startInstance(ctx context.Context, instanceID string) {
+	_, err := h.EC2.StartInstances(ctx, &ec2.StartInstancesInput{
+		InstanceIds: []string{instanceID},
+	})
+	if err != nil {
+		log.Printf("Failed to start %s: %v", instanceID, err)
+	} else {
+		log.Printf("Started %s", instanceID)
 	}
-	return nil
 }
 
-// attachEIP waits for the NAT instance to reach "running", then allocates and
-// associates an EIP to the public ENI. Idempotent: no-op if ENI already has an EIP.
-func (h *Handler) attachEIP(ctx context.Context, instanceID, az string) {
-	defer timed("attach_eip")()
-
-	if !h.waitForState(ctx, instanceID, []string{"running"}, 120) {
-		return
+func (h *Handler) stopInstance(ctx context.Context, instanceID string) {
+	_, err := h.EC2.StopInstances(ctx, &ec2.StopInstancesInput{
+		InstanceIds: []string{instanceID},
+		Force:       aws.Bool(true),
+	})
+	if err != nil {
+		log.Printf("Failed to stop %s: %v", instanceID, err)
+	} else {
+		log.Printf("Stopped %s", instanceID)
 	}
+}
 
-	inst := h.getInstance(ctx, instanceID)
-	if inst == nil {
-		return
-	}
-	eni := getPublicENI(inst)
+// allocateAndAttachEIP allocates an EIP and associates it to the NAT's public ENI.
+func (h *Handler) allocateAndAttachEIP(ctx context.Context, nat *Instance, az string) {
+	defer timed("allocate_and_attach_eip")()
+
+	eni := getPublicENI(nat)
 	if eni == nil {
-		log.Printf("No public ENI on %s", instanceID)
-		return
-	}
-
-	// Idempotent: if ENI already has an EIP, nothing to do.
-	if eni.Association != nil && aws.ToString(eni.Association.PublicIp) != "" {
-		log.Printf("ENI %s already has EIP %s", aws.ToString(eni.NetworkInterfaceId), aws.ToString(eni.Association.PublicIp))
+		log.Printf("No public ENI on %s", nat.InstanceID)
 		return
 	}
 
 	eniID := aws.ToString(eni.NetworkInterfaceId)
+
+	// If ENI already has an EIP (e.g. EIP tag query lagged), skip.
+	if eni.Association != nil && aws.ToString(eni.Association.PublicIp) != "" {
+		log.Printf("ENI %s already has EIP %s", eniID, aws.ToString(eni.Association.PublicIp))
+		return
+	}
 
 	alloc, err := h.EC2.AllocateAddress(ctx, &ec2.AllocateAddressInput{
 		Domain: ec2types.DomainTypeVpc,
@@ -237,23 +255,6 @@ func (h *Handler) attachEIP(ctx context.Context, instanceID, az string) {
 	}
 	allocID := aws.ToString(alloc.AllocationId)
 
-	// Race-detection: re-check ENI before associating. Another invocation may
-	// have already attached an EIP between our first check and AllocateAddress.
-	niResp, descErr := h.EC2.DescribeNetworkInterfaces(ctx, &ec2.DescribeNetworkInterfacesInput{
-		NetworkInterfaceIds: []string{eniID},
-	})
-	if descErr == nil && len(niResp.NetworkInterfaces) > 0 {
-		ni := niResp.NetworkInterfaces[0]
-		if ni.Association != nil && aws.ToString(ni.Association.PublicIp) != "" {
-			log.Printf("Race detected: ENI %s already has EIP %s, releasing %s",
-				eniID, aws.ToString(ni.Association.PublicIp), allocID)
-			h.EC2.ReleaseAddress(ctx, &ec2.ReleaseAddressInput{AllocationId: aws.String(allocID)})
-			return
-		}
-	} else if descErr != nil {
-		log.Printf("Failed to re-check ENI %s (proceeding with associate): %v", eniID, descErr)
-	}
-
 	_, err = h.EC2.AssociateAddress(ctx, &ec2.AssociateAddressInput{
 		AllocationId:       aws.String(allocID),
 		NetworkInterfaceId: aws.String(eniID),
@@ -266,95 +267,38 @@ func (h *Handler) attachEIP(ctx context.Context, instanceID, az string) {
 	log.Printf("Attached EIP %s to %s", aws.ToString(alloc.PublicIp), eniID)
 }
 
-// detachEIP waits for the NAT instance to reach "stopped", then disassociates
-// and releases the EIP from the public ENI. Also sweeps for orphaned EIPs
-// left by concurrent attachEIP races.
-func (h *Handler) detachEIP(ctx context.Context, instanceID, az string) {
-	defer timed("detach_eip")()
-
-	if !h.waitForState(ctx, instanceID, []string{"stopped"}, 120) {
-		return
-	}
-
-	inst := h.getInstance(ctx, instanceID)
-	if inst == nil {
-		return
-	}
-	eni := getPublicENI(inst)
-	if eni == nil {
-		return
-	}
-	eniID := aws.ToString(eni.NetworkInterfaceId)
-
-	niResp, err := h.EC2.DescribeNetworkInterfaces(ctx, &ec2.DescribeNetworkInterfacesInput{
-		NetworkInterfaceIds: []string{eniID},
-	})
-	if err != nil {
-		log.Printf("Failed to describe ENI %s: %v", eniID, err)
-		return
-	}
-	if len(niResp.NetworkInterfaces) > 0 {
-		ni := niResp.NetworkInterfaces[0]
-		if ni.Association != nil && aws.ToString(ni.Association.AssociationId) != "" {
-			assocID := aws.ToString(ni.Association.AssociationId)
-			allocID := aws.ToString(ni.Association.AllocationId)
-			publicIP := aws.ToString(ni.Association.PublicIp)
-
-			_, err = h.EC2.DisassociateAddress(ctx, &ec2.DisassociateAddressInput{
-				AssociationId: aws.String(assocID),
-			})
-			if err != nil {
-				if isErrCode(err, "InvalidAssociationID.NotFound") {
-					log.Printf("EIP already disassociated from %s", eniID)
-				} else {
-					log.Printf("Failed to detach EIP from %s: %v", eniID, err)
-					return
-				}
-			}
-			_, err = h.EC2.ReleaseAddress(ctx, &ec2.ReleaseAddressInput{
-				AllocationId: aws.String(allocID),
-			})
-			if err != nil {
-				log.Printf("Failed to release EIP %s: %v", allocID, err)
-			} else {
-				log.Printf("Released EIP %s from %s", publicIP, eniID)
-			}
-		}
-	}
-
-	h.sweepOrphanEIPs(ctx, az)
-}
-
-// sweepOrphanEIPs releases any EIPs tagged for this AZ that were left behind
-// by concurrent attachEIP races or NAT termination without a stop cycle.
-func (h *Handler) sweepOrphanEIPs(ctx context.Context, az string) {
-	defer timed("sweep_orphan_eips")()
-	addrResp, err := h.EC2.DescribeAddresses(ctx, &ec2.DescribeAddressesInput{
-		Filters: []ec2types.Filter{
-			{Name: aws.String("tag:" + h.NATTagKey), Values: []string{h.NATTagValue}},
-			{Name: aws.String("tag:AZ"), Values: []string{az}},
-		},
-	})
-	if err != nil {
-		log.Printf("Orphan EIP sweep failed for %s: %v", az, err)
-		return
-	}
-	for _, addr := range addrResp.Addresses {
-		orphanAllocID := aws.ToString(addr.AllocationId)
+// releaseEIPs disassociates and releases a list of EIPs.
+func (h *Handler) releaseEIPs(ctx context.Context, eips []ec2types.Address) {
+	for _, addr := range eips {
+		allocID := aws.ToString(addr.AllocationId)
 		if addr.AssociationId != nil {
-			h.EC2.DisassociateAddress(ctx, &ec2.DisassociateAddressInput{
+			_, err := h.EC2.DisassociateAddress(ctx, &ec2.DisassociateAddressInput{
 				AssociationId: addr.AssociationId,
 			})
+			if err != nil && !isErrCode(err, "InvalidAssociationID.NotFound") {
+				log.Printf("Failed to disassociate EIP %s: %v", allocID, err)
+			}
 		}
 		_, err := h.EC2.ReleaseAddress(ctx, &ec2.ReleaseAddressInput{
-			AllocationId: aws.String(orphanAllocID),
+			AllocationId: aws.String(allocID),
 		})
 		if err != nil {
-			log.Printf("Failed to release orphan EIP %s: %v", orphanAllocID, err)
+			log.Printf("Failed to release EIP %s: %v", allocID, err)
 		} else {
-			log.Printf("Released orphan EIP %s in %s", orphanAllocID, az)
+			log.Printf("Released EIP %s", allocID)
 		}
 	}
+}
+
+// --- ENI helper ---
+
+func getPublicENI(inst *Instance) *ec2types.InstanceNetworkInterface {
+	for i := range inst.NetworkInterfaces {
+		if aws.ToInt32(inst.NetworkInterfaces[i].Attachment.DeviceIndex) == 0 {
+			return &inst.NetworkInterfaces[i]
+		}
+	}
+	return nil
 }
 
 // --- Config version ---
@@ -369,58 +313,6 @@ func (h *Handler) isCurrentConfig(inst *Instance) bool {
 		}
 	}
 	return true // no tag to compare — assume current
-}
-
-func (h *Handler) replaceNAT(ctx context.Context, inst *Instance, az, vpc string) string {
-	defer timed("replace_nat")()
-	iid := inst.InstanceID
-	var eniIDs []string
-	for _, eni := range inst.NetworkInterfaces {
-		eniIDs = append(eniIDs, aws.ToString(eni.NetworkInterfaceId))
-	}
-
-	log.Printf("Replacing outdated NAT %s in %s", iid, az)
-	h.EC2.TerminateInstances(ctx, &ec2.TerminateInstancesInput{
-		InstanceIds: []string{iid},
-	})
-
-	// Wait for termination using polling.
-	h.waitForTermination(ctx, iid)
-
-	// Wait for ENIs to become available.
-	if len(eniIDs) > 0 {
-		for i := 0; i < 60; i++ {
-			niResp, err := h.EC2.DescribeNetworkInterfaces(ctx, &ec2.DescribeNetworkInterfacesInput{
-				NetworkInterfaceIds: eniIDs,
-			})
-			if err == nil {
-				allAvailable := true
-				for _, ni := range niResp.NetworkInterfaces {
-					if ni.Status != ec2types.NetworkInterfaceStatusAvailable {
-						allAvailable = false
-						break
-					}
-				}
-				if allAvailable {
-					break
-				}
-			}
-			h.sleep(2 * time.Second)
-		}
-	}
-
-	return h.createNAT(ctx, az, vpc)
-}
-
-func (h *Handler) waitForTermination(ctx context.Context, instanceID string) {
-	for i := 0; i < 100; i++ {
-		inst := h.getInstance(ctx, instanceID)
-		if inst == nil || inst.StateName == "terminated" {
-			return
-		}
-		h.sleep(2 * time.Second)
-	}
-	log.Printf("Timeout waiting for %s to terminate", instanceID)
 }
 
 // --- NAT lifecycle helpers ---
@@ -442,7 +334,6 @@ func (h *Handler) resolveAMI(ctx context.Context) string {
 		return ""
 	}
 
-	// Pick the latest by CreationDate.
 	images := resp.Images
 	sort.Slice(images, func(i, j int) bool {
 		return aws.ToString(images[i].CreationDate) > aws.ToString(images[j].CreationDate)
@@ -522,63 +413,6 @@ func (h *Handler) createNAT(ctx context.Context, az, vpc string) string {
 	return iid
 }
 
-func (h *Handler) startNAT(ctx context.Context, inst *Instance, az string) {
-	defer timed("start_nat")()
-	iid := inst.InstanceID
-	if !h.waitForState(ctx, iid, []string{"stopped"}, 90) {
-		return
-	}
-	_, err := h.EC2.StartInstances(ctx, &ec2.StartInstancesInput{
-		InstanceIds: []string{iid},
-	})
-	if err != nil {
-		log.Printf("Failed to start NAT %s: %v", iid, err)
-		return
-	}
-	log.Printf("Started NAT %s", iid)
-}
-
-func (h *Handler) stopNAT(ctx context.Context, inst *Instance) {
-	defer timed("stop_nat")()
-	iid := inst.InstanceID
-	_, err := h.EC2.StopInstances(ctx, &ec2.StopInstancesInput{
-		InstanceIds: []string{iid},
-		Force:       aws.Bool(true),
-	})
-	if err != nil {
-		log.Printf("Failed to stop NAT %s: %v", iid, err)
-		return
-	}
-	log.Printf("Stopped NAT %s", iid)
-}
-
-// sweepIdleNATs is a fallback for when classify can't find the triggering
-// instance (e.g. it's already gone from the EC2 API after termination).
-// It checks every running NAT in the VPC and stops any with no siblings.
-func (h *Handler) sweepIdleNATs(ctx context.Context, triggerID string) {
-	defer timed("sweep_idle_nats")()
-	resp, err := h.EC2.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
-		Filters: []ec2types.Filter{
-			{Name: aws.String("tag:" + h.NATTagKey), Values: []string{h.NATTagValue}},
-			{Name: aws.String("vpc-id"), Values: []string{h.TargetVPC}},
-			{Name: aws.String("instance-state-name"), Values: []string{"pending", "running"}},
-		},
-	})
-	if err != nil {
-		log.Printf("Sweep failed: %v", err)
-		return
-	}
-	for _, r := range resp.Reservations {
-		for _, i := range r.Instances {
-			nat := instanceFromAPI(i)
-			if len(h.findSiblings(ctx, nat.AZ, nat.VpcID, triggerID)) == 0 {
-				log.Printf("Sweep: no siblings for NAT %s in %s, stopping", nat.InstanceID, nat.AZ)
-				h.stopNAT(ctx, nat)
-			}
-		}
-	}
-}
-
 // --- Cleanup (destroy-time) ---
 
 func (h *Handler) cleanupAll(ctx context.Context) {
@@ -610,7 +444,7 @@ func (h *Handler) cleanupAll(ctx context.Context) {
 		})
 	}
 
-	// Release EIPs while instances are terminating (overlap the wait).
+	// Release EIPs.
 	addrResp, err := h.EC2.DescribeAddresses(ctx, &ec2.DescribeAddressesInput{
 		Filters: []ec2types.Filter{
 			{Name: aws.String("tag:" + h.NATTagKey), Values: []string{h.NATTagValue}},
@@ -638,22 +472,17 @@ func (h *Handler) cleanupAll(ctx context.Context) {
 		}
 	}
 
-	// Wait for instance termination.
 	if len(instanceIDs) > 0 {
-		for _, iid := range instanceIDs {
-			h.waitForTermination(ctx, iid)
-		}
-		log.Println("All NAT instances terminated")
+		log.Println("NAT instance termination initiated")
 	}
 }
 
 // isErrCode returns true if the error (or any wrapped error) has the given
-// AWS API error code. Works with both smithy APIError and legacy awserr.
+// AWS API error code.
 func isErrCode(err error, code string) bool {
 	var ae smithy.APIError
 	if ok := errors.As(err, &ae); ok {
 		return ae.ErrorCode() == code
 	}
-	// Fallback: check the error string for SDKs that don't implement APIError.
 	return strings.Contains(err.Error(), code)
 }

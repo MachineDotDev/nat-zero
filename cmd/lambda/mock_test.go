@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"sync"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -224,6 +223,5 @@ func newTestHandler(mock *mockEC2) *Handler {
 		AMIOwner:       "568608671756",
 		AMIPattern:     "fck-nat-al2023-*-arm64-*",
 		ConfigVersion:  "",
-		SleepFunc:      func(d time.Duration) {}, // no-op sleep
 	}
 }
