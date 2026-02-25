@@ -59,7 +59,7 @@ No modules.
 | <a name="input_ignore_tag_value"></a> [ignore\_tag\_value](#input\_ignore\_tag\_value) | Tag value used to mark instances the Lambda should ignore | `string` | `"true"` | no |
 | <a name="input_instance_type"></a> [instance\_type](#input\_instance\_type) | Instance type for the NAT instance | `string` | `"t4g.nano"` | no |
 | <a name="input_lambda_binary_url"></a> [lambda\_binary\_url](#input\_lambda\_binary\_url) | URL to the pre-compiled Go Lambda zip. Updated automatically by CI. | `string` | `"https://github.com/MachineDotDev/nat-zero/releases/download/nat-zero-lambda-latest/lambda.zip"` | no |
-| <a name="input_lambda_memory_size"></a> [lambda\_memory\_size](#input\_lambda\_memory\_size) | Memory allocated to the Lambda function in MB (also scales CPU proportionally) | `number` | `256` | no |
+| <a name="input_lambda_memory_size"></a> [lambda\_memory\_size](#input\_lambda\_memory\_size) | Memory allocated to the Lambda function in MB (also scales CPU proportionally) | `number` | `128` | no |
 | <a name="input_log_retention_days"></a> [log\_retention\_days](#input\_log\_retention\_days) | CloudWatch log retention in days (only used when enable\_logging is true) | `number` | `14` | no |
 | <a name="input_market_type"></a> [market\_type](#input\_market\_type) | Whether to use spot or on-demand instances | `string` | `"on-demand"` | no |
 | <a name="input_name"></a> [name](#input\_name) | Name prefix for all resources created by this module | `string` | n/a | yes |
