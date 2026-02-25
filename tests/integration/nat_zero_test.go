@@ -387,10 +387,14 @@ func TestNatZero(t *testing.T) {
 		// Verify NAT instances are terminated.
 		t.Log("Verifying NAT instances terminated...")
 		natTermStart := time.Now()
-		retry.DoWithRetry(t, "NAT terminated", 20, 5*time.Second, func() (string, error) {
-			nats := findNATInstances(t, ec2Client, vpcID)
+		retry.DoWithRetry(t, "NAT terminated", 40, 5*time.Second, func() (string, error) {
+			// Wait for fully terminated (not just absent from pending/running)
+			// so ENIs are released before terraform destroy tries to delete them.
+			nats := findNATInstancesInState(t, ec2Client, vpcID,
+				[]string{"pending", "running", "shutting-down", "stopping", "stopped"})
 			if len(nats) > 0 {
-				return "", fmt.Errorf("still %d running NAT instances", len(nats))
+				return "", fmt.Errorf("still %d NAT instances (%s)",
+					len(nats), aws.StringValue(nats[0].State.Name))
 			}
 			return "OK", nil
 		})
