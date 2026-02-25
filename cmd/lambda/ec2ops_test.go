@@ -513,8 +513,17 @@ func TestCleanupAll(t *testing.T) {
 		mock := &mockEC2{}
 		nat1 := makeTestInstance("i-nat1", "running", testVPC, testAZ, nil, nil)
 		nat2 := makeTestInstance("i-nat2", "stopped", testVPC, testAZ, nil, nil)
+		terminated := false
 		mock.DescribeInstancesFn = func(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+			if terminated {
+				// After termination, instances are gone (waitForTermination polls this)
+				return describeResponse(), nil
+			}
 			return describeResponse(nat1, nat2), nil
+		}
+		mock.TerminateInstancesFn = func(ctx context.Context, params *ec2.TerminateInstancesInput, optFns ...func(*ec2.Options)) (*ec2.TerminateInstancesOutput, error) {
+			terminated = true
+			return &ec2.TerminateInstancesOutput{}, nil
 		}
 		mock.DescribeAddressesFn = func(ctx context.Context, params *ec2.DescribeAddressesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeAddressesOutput, error) {
 			return &ec2.DescribeAddressesOutput{

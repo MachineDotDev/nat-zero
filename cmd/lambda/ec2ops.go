@@ -7,6 +7,7 @@ import (
 	"log"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -442,6 +443,7 @@ func (h *Handler) cleanupAll(ctx context.Context) {
 		h.EC2.TerminateInstances(ctx, &ec2.TerminateInstancesInput{
 			InstanceIds: instanceIDs,
 		})
+		h.waitForTermination(ctx, instanceIDs)
 	}
 
 	// Release EIPs.
@@ -471,10 +473,40 @@ func (h *Handler) cleanupAll(ctx context.Context) {
 			}
 		}
 	}
+}
 
-	if len(instanceIDs) > 0 {
-		log.Println("NAT instance termination initiated")
+// waitForTermination polls until all instances reach the terminated state,
+// ensuring ENIs are fully detached before returning. This is critical for
+// terraform destroy: the module's pre-created ENIs (delete_on_termination=false)
+// remain attached until the instance is fully terminated. If cleanupAll returns
+// before termination completes, Terraform may try to delete still-attached ENIs.
+func (h *Handler) waitForTermination(ctx context.Context, instanceIDs []string) {
+	defer timed("wait_for_termination")()
+	for attempt := 0; attempt < 60; attempt++ {
+		time.Sleep(2 * time.Second)
+		resp, err := h.EC2.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
+			InstanceIds: instanceIDs,
+			Filters: []ec2types.Filter{
+				{Name: aws.String("instance-state-name"), Values: []string{
+					"pending", "running", "shutting-down", "stopping", "stopped",
+				}},
+			},
+		})
+		if err != nil {
+			log.Printf("Error polling termination status: %v", err)
+			return
+		}
+		remaining := 0
+		for _, r := range resp.Reservations {
+			remaining += len(r.Instances)
+		}
+		if remaining == 0 {
+			log.Printf("All %d NAT instances terminated", len(instanceIDs))
+			return
+		}
+		log.Printf("Waiting for %d instance(s) to terminate...", remaining)
 	}
+	log.Printf("Timed out waiting for instance termination")
 }
 
 // isErrCode returns true if the error (or any wrapped error) has the given
