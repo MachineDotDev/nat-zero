@@ -683,3 +683,139 @@ func TestRace_R10_ENIAvailabilityTimeout(t *testing.T) {
 		t.Errorf("expected multiple DescribeNetworkInterfaces polls, got %d", mock.callCount("DescribeNetworkInterfaces"))
 	}
 }
+
+// TestRace_R11_EIPOrphanOnNATTermination verifies that when a NAT instance is
+// terminated (not stopped), orphan EIPs are cleaned up via sweepOrphanEIPs.
+//
+// Race scenario:
+//   - NAT is terminated by replaceNAT, spot reclaim, or manual action
+//   - No stopping/stopped EventBridge events fire, so detachEIP never runs
+//   - The EIP allocation leaks (still allocated, no longer associated)
+//
+// Mitigation: handler detects isTerminating(state) for NAT events and calls
+// sweepOrphanEIPs to release any EIPs tagged for that AZ.
+func TestRace_R11_EIPOrphanOnNATTermination(t *testing.T) {
+	t.Run("shutting-down NAT sweeps orphan EIPs", func(t *testing.T) {
+		mock := &mockEC2{}
+		natTags := []ec2types.Tag{{Key: aws.String("nat-zero:managed"), Value: aws.String("true")}}
+		natInst := makeTestInstance("i-nat1", "shutting-down", testVPC, testAZ, natTags, nil)
+
+		mock.DescribeInstancesFn = func(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+			return describeResponse(natInst), nil
+		}
+		// Orphan EIP left behind from the now-terminating NAT
+		mock.DescribeAddressesFn = func(ctx context.Context, params *ec2.DescribeAddressesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeAddressesOutput, error) {
+			return &ec2.DescribeAddressesOutput{
+				Addresses: []ec2types.Address{{
+					AllocationId: aws.String("eipalloc-orphan"),
+				}},
+			}, nil
+		}
+		h := newTestHandler(mock)
+		err := h.HandleRequest(context.Background(), Event{InstanceID: "i-nat1", State: "shutting-down"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if mock.callCount("ReleaseAddress") != 1 {
+			t.Errorf("expected ReleaseAddress=1 (orphan EIP cleaned up), got %d", mock.callCount("ReleaseAddress"))
+		}
+	})
+
+	t.Run("terminated NAT sweeps orphan EIPs", func(t *testing.T) {
+		mock := &mockEC2{}
+		natTags := []ec2types.Tag{{Key: aws.String("nat-zero:managed"), Value: aws.String("true")}}
+		natInst := makeTestInstance("i-nat1", "terminated", testVPC, testAZ, natTags, nil)
+
+		mock.DescribeInstancesFn = func(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+			return describeResponse(natInst), nil
+		}
+		mock.DescribeAddressesFn = func(ctx context.Context, params *ec2.DescribeAddressesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeAddressesOutput, error) {
+			return &ec2.DescribeAddressesOutput{
+				Addresses: []ec2types.Address{{
+					AllocationId:  aws.String("eipalloc-orphan"),
+					AssociationId: aws.String("eipassoc-stale"),
+				}},
+			}, nil
+		}
+		h := newTestHandler(mock)
+		err := h.HandleRequest(context.Background(), Event{InstanceID: "i-nat1", State: "terminated"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		// Should disassociate (stale) then release
+		if mock.callCount("DisassociateAddress") != 1 {
+			t.Errorf("expected DisassociateAddress=1, got %d", mock.callCount("DisassociateAddress"))
+		}
+		if mock.callCount("ReleaseAddress") != 1 {
+			t.Errorf("expected ReleaseAddress=1, got %d", mock.callCount("ReleaseAddress"))
+		}
+	})
+
+	t.Run("no orphan EIPs is noop", func(t *testing.T) {
+		mock := &mockEC2{}
+		natTags := []ec2types.Tag{{Key: aws.String("nat-zero:managed"), Value: aws.String("true")}}
+		natInst := makeTestInstance("i-nat1", "shutting-down", testVPC, testAZ, natTags, nil)
+
+		mock.DescribeInstancesFn = func(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+			return describeResponse(natInst), nil
+		}
+		mock.DescribeAddressesFn = func(ctx context.Context, params *ec2.DescribeAddressesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeAddressesOutput, error) {
+			return &ec2.DescribeAddressesOutput{Addresses: []ec2types.Address{}}, nil
+		}
+		h := newTestHandler(mock)
+		err := h.HandleRequest(context.Background(), Event{InstanceID: "i-nat1", State: "shutting-down"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if mock.callCount("ReleaseAddress") != 0 {
+			t.Error("expected no ReleaseAddress when no orphans")
+		}
+	})
+}
+
+// TestRace_R12_SweepIdleNATsLacksRetry documents that sweepIdleNATs calls
+// findSiblings once per NAT without the retry loop that maybeStopNAT uses.
+//
+// Race scenario:
+//   - sweepIdleNATs fires (R2 fallback: classify can't find trigger instance)
+//   - findSiblings returns a stale sibling due to EC2 eventual consistency
+//   - NAT is not stopped because it appears to have active workloads
+//
+// Accepted risk: sweepIdleNATs is itself a fallback for the rare case where
+// both shutting-down and terminated events fail to classify. Adding retry
+// here would compound Lambda execution time for a path that rarely fires.
+// The next lifecycle event will eventually stop the NAT.
+func TestRace_R12_SweepIdleNATsLacksRetry(t *testing.T) {
+	mock := &mockEC2{}
+	natTags := []ec2types.Tag{{Key: aws.String("nat-zero:managed"), Value: aws.String("true")}}
+	workTags := []ec2types.Tag{{Key: aws.String("App"), Value: aws.String("web")}}
+	natInst := makeTestInstance("i-nat1", "running", testVPC, testAZ, natTags, nil)
+	staleInst := makeTestInstance("i-stale", "running", testVPC, testAZ, workTags, nil)
+
+	var callIdx int32
+	mock.DescribeInstancesFn = func(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+		idx := atomic.AddInt32(&callIdx, 1)
+		if idx == 1 {
+			// classify: instance gone
+			return describeResponse(), nil
+		}
+		if params.Filters != nil {
+			for _, f := range params.Filters {
+				if aws.ToString(f.Name) == "tag:nat-zero:managed" {
+					return describeResponse(natInst), nil
+				}
+			}
+		}
+		// findSiblings: stale sibling (no retry in sweep path)
+		return describeResponse(staleInst), nil
+	}
+	h := newTestHandler(mock)
+	err := h.HandleRequest(context.Background(), Event{InstanceID: "i-gone", State: "terminated"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Accepted risk: NAT not stopped because stale sibling found (no retry)
+	if mock.callCount("StopInstances") != 0 {
+		t.Error("expected StopInstances=0 (sweep has no retry, stale sibling blocks stop)")
+	}
+}

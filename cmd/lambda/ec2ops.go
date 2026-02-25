@@ -322,8 +322,13 @@ func (h *Handler) detachEIP(ctx context.Context, instanceID, az string) {
 		}
 	}
 
-	// Orphan sweep: release any EIPs tagged for this AZ that were left behind
-	// by a concurrent attachEIP race.
+	h.sweepOrphanEIPs(ctx, az)
+}
+
+// sweepOrphanEIPs releases any EIPs tagged for this AZ that were left behind
+// by concurrent attachEIP races or NAT termination without a stop cycle.
+func (h *Handler) sweepOrphanEIPs(ctx context.Context, az string) {
+	defer timed("sweep_orphan_eips")()
 	addrResp, err := h.EC2.DescribeAddresses(ctx, &ec2.DescribeAddressesInput{
 		Filters: []ec2types.Filter{
 			{Name: aws.String("tag:" + h.NATTagKey), Values: []string{h.NATTagValue}},

@@ -242,7 +242,7 @@ func TestHandlerNatEvents(t *testing.T) {
 		}
 	})
 
-	t.Run("terminated NAT is noop", func(t *testing.T) {
+	t.Run("terminated NAT sweeps orphan EIPs", func(t *testing.T) {
 		mock := &mockEC2{}
 		natInst := makeTestInstance("i-nat1", "terminated", testVPC, testAZ, natTags, nil)
 		mock.DescribeInstancesFn = func(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
@@ -253,8 +253,12 @@ func TestHandlerNatEvents(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if mock.callCount("AllocateAddress") != 0 || mock.callCount("DisassociateAddress") != 0 {
-			t.Error("expected no EIP operations for terminated NAT")
+		if mock.callCount("AllocateAddress") != 0 {
+			t.Error("expected no AllocateAddress for terminated NAT")
+		}
+		// sweepOrphanEIPs runs (DescribeAddresses called)
+		if mock.callCount("DescribeAddresses") != 1 {
+			t.Errorf("expected DescribeAddresses=1 (orphan sweep), got %d", mock.callCount("DescribeAddresses"))
 		}
 	})
 }

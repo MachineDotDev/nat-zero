@@ -63,6 +63,11 @@ func (h *Handler) handle(ctx context.Context, event Event) error {
 			h.attachEIP(ctx, iid, az)
 		} else if isStopping(state) {
 			h.detachEIP(ctx, iid, az)
+		} else if isTerminating(state) {
+			// R11: NAT terminated without a stop cycle (e.g. replaceNAT,
+			// spot reclaim, manual termination). The stopping/stopped events
+			// that trigger detachEIP will never fire, so sweep orphan EIPs.
+			h.sweepOrphanEIPs(ctx, az)
 		}
 		return nil
 	}

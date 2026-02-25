@@ -302,6 +302,8 @@ Because multiple Lambda invocations can fire concurrently from overlapping Event
 | R8 | **Disassociate on already-removed association** — EC2 auto-disassociates EIP on stop before Lambda runs | EC2 instance stop completes and auto-removes EIP before `detachEIP` | `detachEIP` catches `InvalidAssociationID.NotFound` and still releases the allocation | MITIGATED | `TestRace_R8` |
 | R9 | **Orphan EIP from non-NotFound error** — `DisassociateAddress` fails with throttle/other error | API throttling during EIP detach | `detachEIP` returns early without releasing; orphan sweep on next detach cleans up | UNMITIGATED | `TestRace_R9` |
 | R10 | **ENI availability timeout** — ENI never reaches `available` after terminate | EC2 delay in releasing ENI from terminated instance | `replaceNAT` proceeds with `createNAT` after timeout; launch template may fail but next event retries | ACCEPTED | `TestRace_R10` |
+| R11 | **EIP orphan on NAT termination** — NAT terminated without stop cycle, `detachEIP` never fires | `replaceNAT`, spot reclaim, manual termination | Handler detects `isTerminating(state)` for NAT events and calls `sweepOrphanEIPs` to release tagged EIPs | MITIGATED | `TestRace_R11` |
+| R12 | **sweepIdleNATs lacks retry** — stale sibling blocks sweep from stopping idle NAT | EC2 eventual consistency during fallback sweep path | None — sweep is itself a rare fallback (R2); retry budget would compound Lambda execution time | ACCEPTED | `TestRace_R12` |
 
 ### Why Event-Driven NAT Has Races
 
