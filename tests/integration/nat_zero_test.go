@@ -152,13 +152,11 @@ func TestNatZero(t *testing.T) {
 		}
 	}()
 
-	// Dump Lambda CloudWatch logs on failure for diagnostics.
+	// Dump Lambda CloudWatch logs before destroy for diagnostics.
 	cwClient := cloudwatchlogs.New(sess)
 	logGroup := fmt.Sprintf("/aws/lambda/%s", lambdaName)
 	defer func() {
-		if t.Failed() {
-			dumpLambdaLogs(t, cwClient, logGroup)
-		}
+		dumpLambdaLogs(t, cwClient, logGroup)
 	}()
 
 	amiID := getLatestAL2023AMI(t, ec2Client)
