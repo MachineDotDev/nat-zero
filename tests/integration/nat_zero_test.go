@@ -472,8 +472,8 @@ func dumpLambdaLogs(t *testing.T, client *cloudwatchlogs.CloudWatchLogs, logGrou
 		events, err := client.GetLogEvents(&cloudwatchlogs.GetLogEventsInput{
 			LogGroupName:  aws.String(logGroup),
 			LogStreamName: stream.LogStreamName,
-			StartFromHead: aws.Bool(false),
-			Limit:         aws.Int64(50),
+			StartFromHead: aws.Bool(true),
+			Limit:         aws.Int64(500),
 		})
 		if err != nil {
 			t.Logf("Warning: could not read log events: %v", err)

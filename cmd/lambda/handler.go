@@ -158,8 +158,13 @@ func (h *Handler) reconcile(ctx context.Context, az, vpc string, event Event) {
 		return
 	}
 
-	log.Printf("Reconcile %s: converged (workloads=%d, nat=%s, eips=%d)",
-		az, len(workloads), natState(nat), len(eips))
+	if nat != nil && nat.StateName == "pending" {
+		log.Printf("Reconcile %s: waiting (workloads=%d, nat=pending, eips=%d)",
+			az, len(workloads), len(eips))
+	} else {
+		log.Printf("Reconcile %s: converged (workloads=%d, nat=%s, eips=%d)",
+			az, len(workloads), natState(nat), len(eips))
+	}
 }
 
 func natState(nat *Instance) string {
