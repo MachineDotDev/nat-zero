@@ -137,7 +137,12 @@ func (h *Handler) reconcile(ctx context.Context, az, vpc string, event Event) {
 			h.stopInstance(ctx, nat.InstanceID)
 			return
 		}
-		// nat is stopping/stopped/nil — good
+		if nat != nil && nat.StateName == "stopping" {
+			log.Printf("Reconcile %s: waiting (workloads=0, nat=stopping, eips=%d)",
+				az, len(eips))
+			return
+		}
+		// nat is stopped/nil — good
 	}
 
 	// --- EIP convergence ---

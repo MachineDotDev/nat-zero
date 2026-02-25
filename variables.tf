@@ -113,7 +113,7 @@ variable "ignore_tag_value" {
 
 variable "lambda_memory_size" {
   type        = number
-  default     = 256
+  default     = 128
   description = "Memory allocated to the Lambda function in MB (also scales CPU proportionally)"
 
   validation {
