@@ -20,9 +20,9 @@ func TestResolveAZUnit(t *testing.T) {
 			return describeResponse(), nil
 		}
 		h := newTestHandler(mock)
-		az, vpc := h.resolveAZ(context.Background(), "i-gone")
-		if az != "" || vpc != "" {
-			t.Errorf("expected ('', ''), got (%q, %q)", az, vpc)
+		inst, az, vpc := h.resolveAZ(context.Background(), "i-gone")
+		if inst != nil || az != "" || vpc != "" {
+			t.Errorf("expected (nil, '', ''), got (%v, %q, %q)", inst, az, vpc)
 		}
 	})
 
@@ -33,9 +33,9 @@ func TestResolveAZUnit(t *testing.T) {
 			return describeResponse(inst), nil
 		}
 		h := newTestHandler(mock)
-		az, vpc := h.resolveAZ(context.Background(), "i-other")
-		if az != "" || vpc != "" {
-			t.Errorf("expected ('', ''), got (%q, %q)", az, vpc)
+		gotInst, az, vpc := h.resolveAZ(context.Background(), "i-other")
+		if gotInst != nil || az != "" || vpc != "" {
+			t.Errorf("expected (nil, '', ''), got (%v, %q, %q)", gotInst, az, vpc)
 		}
 	})
 
@@ -47,9 +47,9 @@ func TestResolveAZUnit(t *testing.T) {
 			return describeResponse(inst), nil
 		}
 		h := newTestHandler(mock)
-		az, vpc := h.resolveAZ(context.Background(), "i-ign")
-		if az != "" || vpc != "" {
-			t.Errorf("expected ('', ''), got (%q, %q)", az, vpc)
+		gotInst, az, vpc := h.resolveAZ(context.Background(), "i-ign")
+		if gotInst != nil || az != "" || vpc != "" {
+			t.Errorf("expected (nil, '', ''), got (%v, %q, %q)", gotInst, az, vpc)
 		}
 	})
 
@@ -61,9 +61,9 @@ func TestResolveAZUnit(t *testing.T) {
 			return describeResponse(inst), nil
 		}
 		h := newTestHandler(mock)
-		az, vpc := h.resolveAZ(context.Background(), "i-nat")
-		if az != testAZ || vpc != testVPC {
-			t.Errorf("expected (%q, %q), got (%q, %q)", testAZ, testVPC, az, vpc)
+		gotInst, az, vpc := h.resolveAZ(context.Background(), "i-nat")
+		if gotInst == nil || az != testAZ || vpc != testVPC {
+			t.Errorf("expected (inst, %q, %q), got (%v, %q, %q)", testAZ, testVPC, gotInst, az, vpc)
 		}
 	})
 
@@ -75,9 +75,9 @@ func TestResolveAZUnit(t *testing.T) {
 			return describeResponse(inst), nil
 		}
 		h := newTestHandler(mock)
-		az, vpc := h.resolveAZ(context.Background(), "i-work")
-		if az != testAZ || vpc != testVPC {
-			t.Errorf("expected (%q, %q), got (%q, %q)", testAZ, testVPC, az, vpc)
+		gotInst, az, vpc := h.resolveAZ(context.Background(), "i-work")
+		if gotInst == nil || az != testAZ || vpc != testVPC {
+			t.Errorf("expected (inst, %q, %q), got (%v, %q, %q)", testAZ, testVPC, gotInst, az, vpc)
 		}
 	})
 }

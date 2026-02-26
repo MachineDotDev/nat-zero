@@ -40,32 +40,33 @@ func (h *Handler) handle(ctx context.Context, event Event) error {
 
 	log.Printf("instance=%s state=%s", event.InstanceID, event.State)
 
-	az, vpc := h.resolveAZ(ctx, event.InstanceID)
+	triggerInst, az, vpc := h.resolveAZ(ctx, event.InstanceID)
 	if az == "" {
 		// Instance gone from API or wrong VPC/ignored — sweep all AZs.
 		h.sweepAllAZs(ctx)
 		return nil
 	}
 
-	h.reconcile(ctx, az, vpc, event)
+	h.reconcile(ctx, az, vpc, event, triggerInst)
 	return nil
 }
 
 // resolveAZ looks up the trigger instance to determine which AZ to reconcile.
-// Returns ("", "") if the instance is gone, wrong VPC, or has the ignore tag.
-func (h *Handler) resolveAZ(ctx context.Context, instanceID string) (az, vpc string) {
+// Returns the instance itself (for use in reconcile) plus its AZ and VPC.
+// Returns (nil, "", "") if the instance is gone, wrong VPC, or has the ignore tag.
+func (h *Handler) resolveAZ(ctx context.Context, instanceID string) (*Instance, string, string) {
 	defer timed("resolve_az")()
 	inst := h.getInstance(ctx, instanceID)
 	if inst == nil {
-		return "", ""
+		return nil, "", ""
 	}
 	if inst.VpcID != h.TargetVPC {
-		return "", ""
+		return nil, "", ""
 	}
 	if hasTag(inst.Tags, h.IgnoreTagKey, h.IgnoreTagValue) {
-		return "", ""
+		return nil, "", ""
 	}
-	return inst.AZ, inst.VpcID
+	return inst, inst.AZ, inst.VpcID
 }
 
 // sweepAllAZs reconciles every AZ that has a launch template configured.
@@ -73,18 +74,39 @@ func (h *Handler) sweepAllAZs(ctx context.Context) {
 	defer timed("sweep_all_azs")()
 	azs := h.findConfiguredAZs(ctx)
 	for _, az := range azs {
-		h.reconcile(ctx, az, h.TargetVPC, Event{})
+		h.reconcile(ctx, az, h.TargetVPC, Event{}, nil)
 	}
 }
 
 // reconcile observes the current state of workloads, NAT, and EIPs in an AZ,
 // then takes at most one mutating action to converge toward the desired state.
-func (h *Handler) reconcile(ctx context.Context, az, vpc string, event Event) {
+// triggerInst is the instance that triggered this reconcile (from resolveAZ).
+func (h *Handler) reconcile(ctx context.Context, az, vpc string, event Event, triggerInst *Instance) {
 	defer timed("reconcile")()
 
 	workloads := h.findWorkloads(ctx, az, vpc)
 	nats := h.findNATs(ctx, az, vpc)
 	eips := h.findEIPs(ctx, az)
+
+	// --- Handle EC2 eventual consistency for NAT instances ---
+	// If the trigger instance is a NAT that findNATs() missed (because tags
+	// haven't propagated yet), add it to the list. This prevents the Lambda
+	// from trying to create a duplicate NAT when processing a newly-created
+	// NAT's pending/running event.
+	if triggerInst != nil && hasTag(triggerInst.Tags, h.NATTagKey, h.NATTagValue) {
+		found := false
+		for _, n := range nats {
+			if n.InstanceID == triggerInst.InstanceID {
+				found = true
+				break
+			}
+		}
+		if !found && (triggerInst.StateName == "pending" || triggerInst.StateName == "running" ||
+			triggerInst.StateName == "stopping" || triggerInst.StateName == "stopped") {
+			log.Printf("Adding trigger NAT %s to nats list (eventual consistency)", triggerInst.InstanceID)
+			nats = append([]*Instance{triggerInst}, nats...)
+		}
+	}
 
 	needNAT := len(workloads) > 0
 
@@ -120,16 +142,13 @@ func (h *Handler) reconcile(ctx context.Context, az, vpc string, event Event) {
 			return
 		}
 		// nat is pending or running — good.
-		// If the NAT appears "pending" from filters but the EventBridge event
-		// says it's "running", re-query by instance ID for authoritative state.
-		// Filter-based DescribeInstances is subject to EC2 eventual consistency
-		// and may lag behind the actual state transition.
+		// If the NAT appears "pending" but the EventBridge event says "running",
+		// trust the event. EC2 API responses are eventually consistent and may
+		// lag behind the actual state transition. EventBridge events are
+		// authoritative for state changes.
 		if nat.StateName == "pending" && event.InstanceID == nat.InstanceID && event.State == "running" {
-			log.Printf("NAT %s shows pending in filters but event says running, re-querying", nat.InstanceID)
-			fresh := h.getInstance(ctx, nat.InstanceID)
-			if fresh != nil {
-				nat = fresh
-			}
+			log.Printf("NAT %s shows pending but event says running, trusting event", nat.InstanceID)
+			nat.StateName = "running"
 		}
 	} else {
 		if nat != nil && (nat.StateName == "running" || nat.StateName == "pending") {

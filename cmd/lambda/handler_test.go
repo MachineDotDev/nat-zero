@@ -649,6 +649,42 @@ func TestReconcileNATEvent(t *testing.T) {
 		}
 	})
 
+	t.Run("NAT pending event not found by filter uses triggerInst", func(t *testing.T) {
+		// Simulates EC2 eventual consistency: NAT was just created, its pending
+		// event fires, but findNATs() doesn't see it yet because tags haven't
+		// propagated. The reconciler should use the trigger instance directly
+		// to avoid trying to create a duplicate NAT.
+		mock := &mockEC2{}
+		workInst := makeTestInstance("i-work1", "running", testVPC, testAZ, workTags, nil)
+		eni := makeENI("eni-pub1", 0, "10.0.1.10", nil)
+		natInst := makeTestInstance("i-nat1", "pending", testVPC, testAZ, natTags, []ec2types.InstanceNetworkInterface{eni})
+		mock.DescribeInstancesFn = func(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+			if len(params.InstanceIds) > 0 {
+				// By-ID query finds the NAT
+				return describeResponse(natInst), nil
+			}
+			for _, f := range params.Filters {
+				if aws.ToString(f.Name) == "tag:nat-zero:managed" {
+					// Filter query doesn't see it yet (tags not propagated)
+					return describeResponse(), nil
+				}
+			}
+			return describeResponse(workInst), nil
+		}
+		mock.DescribeAddressesFn = func(ctx context.Context, params *ec2.DescribeAddressesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeAddressesOutput, error) {
+			return &ec2.DescribeAddressesOutput{}, nil
+		}
+		h := newTestHandler(mock)
+		err := h.HandleRequest(context.Background(), Event{InstanceID: "i-nat1", State: "pending"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		// Should NOT try to create a new NAT (would fail with ENI-in-use)
+		if mock.callCount("RunInstances") != 0 {
+			t.Error("should not call RunInstances when trigger NAT exists but filter doesn't see it")
+		}
+	})
+
 	t.Run("NAT terminated event with workloads creates new", func(t *testing.T) {
 		mock := &mockEC2{}
 		workInst := makeTestInstance("i-work1", "running", testVPC, testAZ, workTags, nil)
