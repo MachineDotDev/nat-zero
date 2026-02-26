@@ -293,6 +293,9 @@ func (h *Handler) releaseEIPs(ctx context.Context, eips []ec2types.Address) {
 
 // --- ENI helper ---
 
+// getPublicENI returns the primary network interface (device index 0).
+// For NAT instances launched via our templates, this is the public-facing ENI
+// where the Elastic IP should be attached.
 func getPublicENI(inst *Instance) *ec2types.InstanceNetworkInterface {
 	for i := range inst.NetworkInterfaces {
 		if aws.ToInt32(inst.NetworkInterfaces[i].Attachment.DeviceIndex) == 0 {
