@@ -685,6 +685,51 @@ func TestReconcileNATEvent(t *testing.T) {
 		}
 	})
 
+	t.Run("NAT stopped event with stale stopping filter releases EIP", func(t *testing.T) {
+		// Simulates EC2 eventual consistency: EventBridge says "stopped" but
+		// filter-based DescribeInstances still returns "stopping". The reconciler
+		// should trust the event state and release the EIP.
+		mock := &mockEC2{}
+		eni := makeENI("eni-pub1", 0, "10.0.1.10", &ec2types.InstanceNetworkInterfaceAssociation{PublicIp: aws.String("1.2.3.4")})
+		natStopping := makeTestInstance("i-nat1", "stopping", testVPC, testAZ, natTags, []ec2types.InstanceNetworkInterface{eni})
+		eip := ec2types.Address{
+			AllocationId: aws.String("eipalloc-1"),
+			PublicIp:     aws.String("1.2.3.4"),
+			Tags:         []ec2types.Tag{{Key: aws.String("nat-zero:managed"), Value: aws.String("true")}},
+		}
+		mock.DescribeInstancesFn = func(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+			if len(params.InstanceIds) > 0 {
+				// By-ID queries still show stopping (API lag)
+				return describeResponse(natStopping), nil
+			}
+			for _, f := range params.Filters {
+				if aws.ToString(f.Name) == "tag:nat-zero:managed" {
+					// Filter query lags — still shows stopping
+					return describeResponse(natStopping), nil
+				}
+			}
+			// No workloads
+			return describeResponse(), nil
+		}
+		mock.DescribeAddressesFn = func(ctx context.Context, params *ec2.DescribeAddressesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeAddressesOutput, error) {
+			return &ec2.DescribeAddressesOutput{Addresses: []ec2types.Address{eip}}, nil
+		}
+		mock.DisassociateAddressFn = func(ctx context.Context, params *ec2.DisassociateAddressInput, optFns ...func(*ec2.Options)) (*ec2.DisassociateAddressOutput, error) {
+			return &ec2.DisassociateAddressOutput{}, nil
+		}
+		mock.ReleaseAddressFn = func(ctx context.Context, params *ec2.ReleaseAddressInput, optFns ...func(*ec2.Options)) (*ec2.ReleaseAddressOutput, error) {
+			return &ec2.ReleaseAddressOutput{}, nil
+		}
+		h := newTestHandler(mock)
+		err := h.HandleRequest(context.Background(), Event{InstanceID: "i-nat1", State: "stopped"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if mock.callCount("ReleaseAddress") != 1 {
+			t.Errorf("expected ReleaseAddress=1, got %d (stale stopping should be corrected by trusting event)", mock.callCount("ReleaseAddress"))
+		}
+	})
+
 	t.Run("NAT terminated event with workloads creates new", func(t *testing.T) {
 		mock := &mockEC2{}
 		workInst := makeTestInstance("i-work1", "running", testVPC, testAZ, workTags, nil)

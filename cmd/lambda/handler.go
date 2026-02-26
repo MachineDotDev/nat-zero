@@ -157,9 +157,15 @@ func (h *Handler) reconcile(ctx context.Context, az, vpc string, event Event, tr
 			return
 		}
 		if nat != nil && nat.StateName == "stopping" {
-			log.Printf("Reconcile %s: waiting (workloads=0, nat=stopping, eips=%d)",
-				az, len(eips))
-			return
+			// Trust event state - EC2 API may lag behind the actual transition
+			if event.InstanceID == nat.InstanceID && event.State == "stopped" {
+				log.Printf("NAT %s shows stopping but event says stopped, trusting event", nat.InstanceID)
+				nat.StateName = "stopped"
+			} else {
+				log.Printf("Reconcile %s: waiting (workloads=0, nat=stopping, eips=%d)",
+					az, len(eips))
+				return
+			}
 		}
 		// nat is stopped/nil — good
 	}
