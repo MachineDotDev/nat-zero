@@ -47,5 +47,5 @@ resource "time_sleep" "eventbridge_propagation" {
     aws_cloudwatch_event_target.state_change_lambda_target,
     aws_lambda_permission.allow_ec2_state_change_eventbridge,
   ]
-  create_duration = "30s"
+  create_duration = "60s"
 }
