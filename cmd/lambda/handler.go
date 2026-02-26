@@ -41,6 +41,10 @@ func (h *Handler) handle(ctx context.Context, event Event) error {
 	log.Printf("instance=%s state=%s", event.InstanceID, event.State)
 
 	triggerInst, az, vpc := h.resolveAZ(ctx, event.InstanceID)
+	// Trust event state over EC2 API (eventual consistency)
+	if triggerInst != nil {
+		triggerInst.StateName = event.State
+	}
 	if az == "" {
 		// Instance gone from API or wrong VPC/ignored — sweep all AZs.
 		h.sweepAllAZs(ctx)
@@ -118,6 +122,10 @@ func (h *Handler) reconcile(ctx context.Context, az, vpc string, event Event, tr
 	var nat *Instance
 	if len(nats) > 0 {
 		nat = nats[0]
+		// Trust event state over EC2 API for trigger instance
+		if nat.InstanceID == event.InstanceID {
+			nat.StateName = event.State
+		}
 	}
 
 	// --- NAT convergence (one action per invocation) ---
@@ -141,15 +149,7 @@ func (h *Handler) reconcile(ctx context.Context, az, vpc string, event Event, tr
 			log.Printf("NAT %s is stopping, waiting for next event", nat.InstanceID)
 			return
 		}
-		// nat is pending or running — good.
-		// If the NAT appears "pending" but the EventBridge event says "running",
-		// trust the event. EC2 API responses are eventually consistent and may
-		// lag behind the actual state transition. EventBridge events are
-		// authoritative for state changes.
-		if nat.StateName == "pending" && event.InstanceID == nat.InstanceID && event.State == "running" {
-			log.Printf("NAT %s shows pending but event says running, trusting event", nat.InstanceID)
-			nat.StateName = "running"
-		}
+		// nat is pending or running — good
 	} else {
 		if nat != nil && (nat.StateName == "running" || nat.StateName == "pending") {
 			log.Printf("No workloads in %s, stopping NAT %s", az, nat.InstanceID)
@@ -157,15 +157,9 @@ func (h *Handler) reconcile(ctx context.Context, az, vpc string, event Event, tr
 			return
 		}
 		if nat != nil && nat.StateName == "stopping" {
-			// Trust event state - EC2 API may lag behind the actual transition
-			if event.InstanceID == nat.InstanceID && event.State == "stopped" {
-				log.Printf("NAT %s shows stopping but event says stopped, trusting event", nat.InstanceID)
-				nat.StateName = "stopped"
-			} else {
-				log.Printf("Reconcile %s: waiting (workloads=0, nat=stopping, eips=%d)",
-					az, len(eips))
-				return
-			}
+			log.Printf("Reconcile %s: waiting (workloads=0, nat=stopping, eips=%d)",
+				az, len(eips))
+			return
 		}
 		// nat is stopped/nil — good
 	}
