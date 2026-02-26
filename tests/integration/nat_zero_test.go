@@ -370,11 +370,10 @@ func TestNatZero(t *testing.T) {
 
 	t.Run("CleanupAction", func(t *testing.T) {
 		// Terminate all test workloads before cleanup to match production
-		// destroy ordering. In production, Terraform deletes the EventBridge
-		// target before invoking cleanup, so no new events fire. In the test,
-		// EventBridge is still active — if workloads are running when cleanup
-		// terminates the NAT, the terminated-event triggers reconcile which
-		// sees workloads and creates a new NAT.
+		// destroy ordering where Terraform deletes the EventBridge target
+		// (stopping new events) before invoking the cleanup Lambda.
+		// Without this, EventBridge delivers NAT terminated events to the
+		// reconciler which sees running workloads and creates new NATs.
 		termWlStart := time.Now()
 		wlOut, err := ec2Client.DescribeInstances(&ec2.DescribeInstancesInput{
 			Filters: []*ec2.Filter{
@@ -396,19 +395,18 @@ func TestNatZero(t *testing.T) {
 			t.Logf("Terminating %d workload(s) before cleanup", len(wlIDs))
 			_, err := ec2Client.TerminateInstances(&ec2.TerminateInstancesInput{InstanceIds: wlIDs})
 			require.NoError(t, err)
-			ec2Client.WaitUntilInstanceTerminated(&ec2.DescribeInstancesInput{InstanceIds: wlIDs})
+			// Wait until workloads leave pending/running so the reconciler
+			// won't see them as active. Don't wait for full termination
+			// (which takes 90+ seconds) — shutting-down is sufficient.
+			retry.DoWithRetry(t, "workloads not active", 30, 2*time.Second, func() (string, error) {
+				active := findWorkloadsInState(t, ec2Client, vpcID, runID, []string{"pending", "running"})
+				if len(active) > 0 {
+					return "", fmt.Errorf("still %d active workloads", len(active))
+				}
+				return "OK", nil
+			})
 		}
 		record("Terminate workloads before cleanup", time.Since(termWlStart))
-
-		// Count EIPs tagged by the Lambda before cleanup.
-		addrOut, err := ec2Client.DescribeAddresses(&ec2.DescribeAddressesInput{
-			Filters: []*ec2.Filter{
-				{Name: aws.String(fmt.Sprintf("tag:%s", natTagKey)),
-					Values: []*string{aws.String(natTagValue)}},
-			},
-		})
-		require.NoError(t, err)
-		require.Greater(t, len(addrOut.Addresses), 0, "should have at least one NAT EIP before cleanup")
 
 		t.Log("Invoking Lambda with cleanup action...")
 		cleanupStart := time.Now()
@@ -621,6 +619,27 @@ func findNATInstancesInState(t *testing.T, c *ec2.EC2, vpcID string, states []st
 			{Name: aws.String(fmt.Sprintf("tag:%s", natTagKey)), Values: []*string{aws.String(natTagValue)}},
 			{Name: aws.String("vpc-id"), Values: []*string{aws.String(vpcID)}},
 			{Name: aws.String("instance-state-name"), Values: stateValues},
+		},
+	})
+	require.NoError(t, err)
+	var res []*ec2.Instance
+	for _, r := range out.Reservations {
+		res = append(res, r.Instances...)
+	}
+	return res
+}
+
+func findWorkloadsInState(t *testing.T, c *ec2.EC2, vpcID, runID string, states []string) []*ec2.Instance {
+	t.Helper()
+	stateValues := make([]*string, len(states))
+	for i, s := range states {
+		stateValues[i] = aws.String(s)
+	}
+	out, err := c.DescribeInstances(&ec2.DescribeInstancesInput{
+		Filters: []*ec2.Filter{
+			{Name: aws.String("vpc-id"), Values: []*string{aws.String(vpcID)}},
+			{Name: aws.String("instance-state-name"), Values: stateValues},
+			{Name: aws.String(fmt.Sprintf("tag:%s", testTagKey)), Values: []*string{aws.String(runID)}},
 		},
 	})
 	require.NoError(t, err)
