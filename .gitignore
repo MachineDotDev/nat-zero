@@ -1,0 +1,29 @@
+# Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.backup
+*.tfplan
+
+# Lambda build artifacts
+.build/
+cmd/lambda/lambda
+cmd/lambda/bootstrap
+*.zip
+
+# Go
+vendor/
+
+# Test cache
+.pytest_cache/
+
+# OS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# AI
+.claude/
