@@ -9,6 +9,6 @@ nav:
   - Home: INDEX.md
   - Architecture: ARCHITECTURE.md
   - Performance: PERFORMANCE.md
+  - Examples: EXAMPLES.md
   - Terraform Reference: REFERENCE.md
   - Testing: TESTING.md
-  - Examples: EXAMPLES.md
