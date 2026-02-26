@@ -4,6 +4,19 @@
 
 nat-zero uses a **reconciliation pattern** to manage NAT instance lifecycles. A single Lambda function (concurrency=1) observes the current state of an AZ and takes one action to converge toward desired state, then returns. The next event picks up where this one left off.
 
+### Pattern Origins
+
+The reconciliation loop pattern has deep roots:
+
+- **Control theory (1788+)**: Feedback loops comparing actual state to desired state, taking corrective action
+- **CFEngine (1993)**: Mark Burgess introduced "convergence" to configuration management
+- **Google Borg/Omega (2005+)**: Internal cluster managers used reconciliation controllers
+- **Kubernetes (2014+)**: Popularized the pattern as "level-triggered" vs "edge-triggered" logic
+
+The key insight: **state is more useful than events**. Rather than tracking event sequences, we observe current state and compute the delta. This makes the system robust to missed events, crashes, and restarts.
+
+See: [Borg, Omega, and Kubernetes (ACM Queue)](https://queue.acm.org/detail.cfm?id=2898444), [Tim Hockin - Edge vs Level Triggered Logic](https://speakerdeck.com/thockin/edge-vs-level-triggered-logic)
+
 ```
   EventBridge (EC2 state changes)
          │
@@ -143,4 +156,44 @@ Each NAT instance uses two ENIs to separate public and private traffic:
 
 ## Config Versioning
 
-The Lambda tags each NAT instance with a `ConfigVersion` hash derived from AMI, instance type, market type, and volume size. When a workload event arrives and the existing NAT has an outdated hash, the reconciler terminates it. The next event creates a replacement with the current config.
+The Lambda tags each NAT instance with a `ConfigVersion` hash derived from AMI, instance type, market type, and volume size.
+
+When the reconciler detects an outdated NAT, replacement takes two events (following the "one action per invocation" pattern):
+
+1. **Event 1**: Outdated config detected → terminate NAT → return
+2. **Event 2**: NAT is now `shutting-down`/`terminated` → create new NAT with current config
+
+This avoids racing with ENI detachment and keeps error handling simple.
+
+## Reliability
+
+### EC2 API Eventual Consistency
+
+The EC2 API is eventually consistent. When EventBridge fires a state change event (e.g., `running`), the EC2 DescribeInstances API may still return the previous state (e.g., `pending`) for several seconds.
+
+nat-zero handles this by **trusting the event state** for the trigger instance:
+
+```go
+// Trust event state over EC2 API (eventual consistency)
+if triggerInst != nil {
+    triggerInst.StateName = event.State
+}
+```
+
+This also applies to NAT instances that may not appear in filter-based queries immediately after creation (tag propagation delay). The reconciler adds the trigger instance to the NAT list if it's missing.
+
+### EventBridge Propagation Delay
+
+After Terraform creates the EventBridge rule and target, there's a propagation delay before events are reliably delivered. Events fired during this window may be silently dropped.
+
+nat-zero includes a 60-second `time_sleep` resource after target creation to mitigate this. Workloads launched immediately after `terraform apply` may still miss their initial events, but subsequent events will trigger reconciliation.
+
+### NAT Stop Behavior
+
+NAT instances are stopped with `Force=true` because they're stateless packet forwarders. There's no graceful shutdown needed — the routing table instantly fails over when the ENI becomes unreachable, and workloads retry their connections.
+
+### Lambda Timeout
+
+The Lambda has a 90-second timeout. Typical invocations complete in 400-600ms. The extended timeout accommodates:
+- Cleanup operations during `terraform destroy` (terminate NATs, wait for ENI detachment, release EIPs)
+- Slow EC2 API responses under load
