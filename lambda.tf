@@ -59,7 +59,7 @@ resource "aws_lambda_function" "nat_zero" {
   runtime                        = "provided.al2023"
   source_code_hash               = fileexists("${path.module}/.build/lambda.zip") ? filebase64sha256("${path.module}/.build/lambda.zip") : null
   architectures                  = ["arm64"]
-  timeout                        = 60
+  timeout                        = 120
   reserved_concurrent_executions = 1
   memory_size                    = var.lambda_memory_size
   tags                           = local.common_tags

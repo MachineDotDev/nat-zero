@@ -369,6 +369,37 @@ func TestNatZero(t *testing.T) {
 	// ── Phase 4: Cleanup action ─────────────────────────────────────────
 
 	t.Run("CleanupAction", func(t *testing.T) {
+		// Terminate all test workloads before cleanup to match production
+		// destroy ordering. In production, Terraform deletes the EventBridge
+		// target before invoking cleanup, so no new events fire. In the test,
+		// EventBridge is still active — if workloads are running when cleanup
+		// terminates the NAT, the terminated-event triggers reconcile which
+		// sees workloads and creates a new NAT.
+		termWlStart := time.Now()
+		wlOut, err := ec2Client.DescribeInstances(&ec2.DescribeInstancesInput{
+			Filters: []*ec2.Filter{
+				{Name: aws.String(fmt.Sprintf("tag:%s", testTagKey)), Values: []*string{aws.String(runID)}},
+				{Name: aws.String("instance-state-name"), Values: []*string{
+					aws.String("pending"), aws.String("running"),
+					aws.String("stopping"), aws.String("stopped"),
+				}},
+			},
+		})
+		require.NoError(t, err)
+		var wlIDs []*string
+		for _, r := range wlOut.Reservations {
+			for _, i := range r.Instances {
+				wlIDs = append(wlIDs, i.InstanceId)
+			}
+		}
+		if len(wlIDs) > 0 {
+			t.Logf("Terminating %d workload(s) before cleanup", len(wlIDs))
+			_, err := ec2Client.TerminateInstances(&ec2.TerminateInstancesInput{InstanceIds: wlIDs})
+			require.NoError(t, err)
+			ec2Client.WaitUntilInstanceTerminated(&ec2.DescribeInstancesInput{InstanceIds: wlIDs})
+		}
+		record("Terminate workloads before cleanup", time.Since(termWlStart))
+
 		// Count EIPs tagged by the Lambda before cleanup.
 		addrOut, err := ec2Client.DescribeAddresses(&ec2.DescribeAddressesInput{
 			Filters: []*ec2.Filter{
