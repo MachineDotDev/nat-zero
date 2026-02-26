@@ -15,9 +15,11 @@ permissions:
 
 jobs:
   integration-test:
+    # Skip for release-please PRs; only run on label or manual dispatch
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      github.event.label.name == 'integration-test'
+      !startsWith(github.head_ref || '', 'release-please--') &&
+      (github.event_name == 'workflow_dispatch' ||
+      github.event.label.name == 'integration-test')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: integration
