@@ -37,3 +37,15 @@ resource "aws_cloudwatch_event_target" "state_change_lambda_target" {
 EOF
   }
 }
+
+# Wait for EventBridge target and Lambda permission to propagate.
+# AWS EventBridge rules/targets are eventually consistent — events that
+# fire within seconds of target creation may be silently dropped.
+# See: https://docs.aws.amazon.com/eventbridge/latest/APIReference/API_PutTargets.html
+resource "time_sleep" "eventbridge_propagation" {
+  depends_on = [
+    aws_cloudwatch_event_target.state_change_lambda_target,
+    aws_lambda_permission.allow_ec2_state_change_eventbridge,
+  ]
+  create_duration = "15s"
+}
