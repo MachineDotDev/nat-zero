@@ -2,21 +2,12 @@ name: Pre-commit
 
 on:
   pull_request:
-  push:
-    branches: [main]
-    paths:
-      - "*.tf"
-      - "cmd/lambda/**"
-      - ".pre-commit-config.yaml"
-      - ".terraform-docs.yml"
 
 permissions:
   contents: read
 
 jobs:
   precommit:
-    # Skip for release-please PRs (skipped jobs report as "success" for required checks)
-    if: github.event_name == 'push' || !startsWith(github.head_ref, 'release-please--')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4

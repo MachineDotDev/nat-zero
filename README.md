@@ -1,5 +1,7 @@
 # nat-zero
 
+[![Go Tests](https://github.com/MachineDotDev/nat-zero/actions/workflows/go-tests.yml/badge.svg?branch=main)](https://github.com/MachineDotDev/nat-zero/actions/workflows/go-tests.yml)
+
 **Scale-to-zero NAT instances for AWS.** Stop paying for NAT when nothing is running.
 
 nat-zero is a Terraform module that replaces always-on NAT with on-demand NAT instances. When a workload launches in a private subnet, a NAT instance starts automatically. When the last workload stops, the NAT shuts down and its Elastic IP is released. Idle cost: ~$0.80/month per AZ.
