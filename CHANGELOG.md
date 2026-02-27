@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/MachineDotDev/nat-zero/compare/v0.1.0...v0.1.1) (2026-02-26)
+
+
+### Documentation
+
+* clarify getPublicENI function purpose ([#4](https://github.com/MachineDotDev/nat-zero/issues/4)) ([d058d63](https://github.com/MachineDotDev/nat-zero/commit/d058d633939031c6536cf97d6ca8ed3e6d4b2c53))
+
 ## 0.1.0 (2026-02-26)
 
 
