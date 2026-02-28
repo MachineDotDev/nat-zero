@@ -8,6 +8,9 @@ repos:
       - id: trailing-whitespace
       - id: check-toml
       - id: check-json
+      - id: detect-private-key
+      - id: detect-aws-credentials
+        args: ["--allow-missing-credentials"]
   - repo: https://github.com/TekWizely/pre-commit-golang
     rev: v1.0.0-rc.1
     hooks:
