@@ -101,6 +101,7 @@ See [Performance](docs/PERFORMANCE.md) for detailed timings and cost breakdowns.
 - **DLQ**: Failed Lambda invocations go to an SQS dead letter queue.
 - **Clean destroy**: A cleanup action terminates NAT instances before `terraform destroy` removes ENIs.
 - **Config versioning**: Changing AMI or instance type auto-replaces NAT instances on next workload event.
+- **EC2 events only**: Currently nat-zero responds only to EC2 instance state changes. If you have a use case for other event sources (ECS tasks, Lambda, etc.), PRs are welcome.
 
 <!-- BEGIN_TF_DOCS -->
 ## Requirements
