@@ -6,7 +6,7 @@ theme:
   palette:
     scheme: default
 nav:
-  - Home: INDEX.md
+  - Home: index.md
   - Architecture: ARCHITECTURE.md
   - Performance: PERFORMANCE.md
   - Examples: EXAMPLES.md
