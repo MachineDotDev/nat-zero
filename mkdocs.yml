@@ -7,8 +7,8 @@ theme:
     scheme: default
 nav:
   - Home: index.md
-  - Architecture: ARCHITECTURE.md
-  - Performance: PERFORMANCE.md
-  - Examples: EXAMPLES.md
-  - Terraform Reference: REFERENCE.md
-  - Testing: TESTING.md
+  - Architecture: architecture.md
+  - Performance: performance.md
+  - Examples: examples.md
+  - Terraform Reference: reference.md
+  - Testing: testing.md

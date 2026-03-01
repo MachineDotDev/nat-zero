@@ -46,5 +46,5 @@ repos:
         name: terraform-docs (README.md)
         args: ["--output-mode", "inject", "--output-file", "README.md", "."]
       - id: terraform-docs-go
-        name: terraform-docs (docs/REFERENCE.md)
-        args: ["-c", ".terraform-docs-reference.yml", "--output-mode", "replace", "--output-file", "docs/REFERENCE.md", "."]
+        name: terraform-docs (docs/reference.md)
+        args: ["-c", ".terraform-docs-reference.yml", "--output-mode", "replace", "--output-file", "docs/reference.md", "."]
