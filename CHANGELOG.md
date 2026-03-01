@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.2.0](https://github.com/MachineDotDev/nat-zero/compare/v0.1.1...v0.2.0) (2026-03-01)
+
+
+### Features
+
+* add secret detection hooks and custom domain ([#9](https://github.com/MachineDotDev/nat-zero/issues/9)) ([06e3b15](https://github.com/MachineDotDev/nat-zero/commit/06e3b15cdf1ff3d408f55a4e083504db6499e3a8))
+
+
+### Bug Fixes
+
+* update otel/sdk to fix PATH hijacking vulnerability ([#10](https://github.com/MachineDotDev/nat-zero/issues/10)) ([e04daca](https://github.com/MachineDotDev/nat-zero/commit/e04daca2b1b2adb3a19d6f2e0227df66037df410))
+
+
+### Documentation
+
+* note EC2 events as only supported event source ([#7](https://github.com/MachineDotDev/nat-zero/issues/7)) ([75f1333](https://github.com/MachineDotDev/nat-zero/commit/75f1333018b5649442572305b5776abe62c60648))
+
 ## [0.1.1](https://github.com/MachineDotDev/nat-zero/compare/v0.1.0...v0.1.1) (2026-02-26)
 
 
