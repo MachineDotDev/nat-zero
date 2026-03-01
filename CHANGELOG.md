@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.1](https://github.com/MachineDotDev/nat-zero/compare/v0.2.0...v0.2.1) (2026-03-01)
+
+
+### Bug Fixes
+
+* rename docs/INDEX.md to index.md ([#13](https://github.com/MachineDotDev/nat-zero/issues/13)) ([e61284b](https://github.com/MachineDotDev/nat-zero/commit/e61284b12025f460768b4a6948263ab9bdc888fd))
+* serve docs homepage at root URL ([#11](https://github.com/MachineDotDev/nat-zero/issues/11)) ([552f513](https://github.com/MachineDotDev/nat-zero/commit/552f51300be3edcd94d544e59fa2a5bfa66a7e3a))
+
 ## [0.2.0](https://github.com/MachineDotDev/nat-zero/compare/v0.1.1...v0.2.0) (2026-03-01)
 
 
