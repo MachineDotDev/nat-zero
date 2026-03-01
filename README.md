@@ -59,7 +59,7 @@ The event is just a trigger — the reconciler always computes the correct actio
 
 Each NAT uses two persistent ENIs (public + private) created by Terraform. They survive stop/start cycles, keeping route tables intact.
 
-See [Architecture](docs/ARCHITECTURE.md) for the full reconciliation model and event flow diagrams.
+See [Architecture](docs/architecture.md) for the full reconciliation model and event flow diagrams.
 
 ## Quick start
 
@@ -80,7 +80,7 @@ module "nat_zero" {
 }
 ```
 
-See [Examples](docs/EXAMPLES.md) for spot instances, custom AMIs, and building from source.
+See [Examples](docs/examples.md) for spot instances, custom AMIs, and building from source.
 
 ## Performance
 
@@ -92,7 +92,7 @@ See [Examples](docs/EXAMPLES.md) for spot instances, custom AMIs, and building f
 
 The Lambda is a compiled Go ARM64 binary. Cold start: 55 ms. Typical invocation: 400-600 ms. Peak memory: 29 MB. The startup delay is dominated by EC2 instance boot, not the Lambda.
 
-See [Performance](docs/PERFORMANCE.md) for detailed timings and cost breakdowns.
+See [Performance](docs/performance.md) for detailed timings and cost breakdowns.
 
 ## Notes
 
