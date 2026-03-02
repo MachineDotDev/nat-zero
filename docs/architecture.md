@@ -156,7 +156,7 @@ Each NAT instance uses two ENIs to separate public and private traffic:
 
 ## Config Versioning
 
-The Lambda tags each NAT instance with a `ConfigVersion` hash derived from AMI, instance type, market type, and volume size.
+The Lambda tags each NAT instance with a `ConfigVersion` hash derived from AMI, instance type, market type, volume size, and encryption setting.
 
 When the reconciler detects an outdated NAT, replacement takes two events (following the "one action per invocation" pattern):
 

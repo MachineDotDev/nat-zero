@@ -65,7 +65,7 @@ variable "block_device_size" {
 variable "encrypt_root_volume" {
   type        = bool
   default     = true
-  description = "Encrypt the root EBS volume. Disabling may reduce cold-start time by ~5-10 seconds on gp3."
+  description = "Encrypt the root EBS volume."
 }
 
 # AMI configuration

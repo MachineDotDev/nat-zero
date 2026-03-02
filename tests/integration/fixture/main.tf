@@ -68,7 +68,7 @@ variable "nat_instance_type" {
 
 variable "encrypt_root_volume" {
   type    = bool
-  default = false
+  default = true
 }
 
 module "nat_zero" {

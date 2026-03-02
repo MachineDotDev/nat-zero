@@ -22,22 +22,22 @@ The test uses [Terratest](https://terratest.gruntwork.io/) with a single `terraf
 
 1. Deploy fixture (private subnet + nat-zero module in default VPC)
 2. Launch workload instance in private subnet
-3. Invoke Lambda → creates NAT instance
+3. EventBridge fires workload state change → Lambda creates NAT instance
 4. Wait for NAT running with EIP attached
 5. Verify workload's egress IP matches NAT's EIP
 
 ### Phase 2: Scale-Down
 
 1. Terminate workload
-2. Invoke Lambda → stops NAT
+2. EventBridge fires workload terminated → Lambda stops NAT
 3. Wait for NAT stopped
-4. Invoke Lambda → releases EIP
+4. EventBridge fires NAT stopped → Lambda releases EIP
 5. Verify no EIPs remain
 
 ### Phase 3: Restart
 
 1. Launch new workload
-2. Invoke Lambda → restarts stopped NAT
+2. EventBridge fires workload state change → Lambda restarts stopped NAT
 3. Wait for NAT running with new EIP
 4. Verify connectivity
 
@@ -64,4 +64,4 @@ Integration tests run in GitHub Actions when the `integration-test` label is add
 
 ## Config Version Replacement
 
-The Lambda tags NAT instances with a `ConfigVersion` hash (AMI + instance type + market type + volume size). When the config changes and a workload triggers reconciliation, the Lambda terminates the outdated NAT and creates a replacement. The integration test doesn't exercise this path directly, but it's covered by unit tests.
+The Lambda tags NAT instances with a `ConfigVersion` hash (AMI + instance type + market type + volume size + encryption). When the config changes and a workload triggers reconciliation, the Lambda terminates the outdated NAT and creates a replacement. The integration test doesn't exercise this path directly, but it's covered by unit tests.

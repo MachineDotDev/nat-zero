@@ -118,9 +118,9 @@ module "nat_zero" {
 }
 ```
 
-## Faster Cold Start
+## Disable Root Volume Encryption
 
-Disable root volume encryption to shave ~5-10 seconds off NAT cold-start time. The NAT instance is a stateless packet forwarder — no sensitive data is stored on the root volume.
+The root EBS volume is encrypted by default. To disable encryption (e.g., for environments without compliance requirements):
 
 ```hcl
 module "nat_zero" {
@@ -131,8 +131,6 @@ module "nat_zero" {
   encrypt_root_volume = false
 }
 ```
-
-See [Performance](performance.md#root-volume-encryption) for benchmarks.
 
 ## Building Lambda Locally
 

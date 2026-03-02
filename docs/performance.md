@@ -44,22 +44,6 @@ The ~8 second gap is EC2 instance lifecycle (placement, OS boot, iptables config
 
 Restart is ~2 seconds faster — `StartInstances` skips AMI resolution and launch template processing.
 
-## Root Volume Encryption
-
-The module encrypts the root EBS volume by default (`encrypt_root_volume = true`). Encryption adds to EC2 pending-state time because the volume must be initialized with an encrypted key before the instance can boot.
-
-| Volume encryption | Approximate pending time (gp3) |
-|-------------------|-------------------------------|
-| Encrypted (default) | ~11 s |
-| Unencrypted | ~5 s |
-
-For faster cold starts in non-compliance environments, set `encrypt_root_volume = false`. This has no impact on:
-
-- **Restart from stopped** — the volume already exists, so no encryption overhead.
-- **Steady-state throughput** — Nitro instances use dedicated hardware for AES-256 encryption at line rate.
-
-The NAT instance is a stateless packet forwarder with no sensitive data on the root volume, so disabling encryption does not expose user traffic.
-
 ## Lambda Execution
 
 | Metric | Value |
