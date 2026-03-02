@@ -118,6 +118,22 @@ module "nat_zero" {
 }
 ```
 
+## Faster Cold Start
+
+Disable root volume encryption to shave ~5-10 seconds off NAT cold-start time. The NAT instance is a stateless packet forwarder — no sensitive data is stored on the root volume.
+
+```hcl
+module "nat_zero" {
+  source = "github.com/MachineDotDev/nat-zero"
+
+  # ... required variables ...
+
+  encrypt_root_volume = false
+}
+```
+
+See [Performance](performance.md#root-volume-encryption) for benchmarks.
+
 ## Building Lambda Locally
 
 For development or if you want to build from source:

@@ -25,7 +25,7 @@ resource "aws_launch_template" "nat_launch_template" {
       volume_type = "gp3"
       iops        = 3000
       throughput  = 250
-      encrypted   = true
+      encrypted   = var.encrypt_root_volume
     }
   }
 

@@ -80,6 +80,7 @@ resource "aws_lambda_function" "nat_zero" {
         var.instance_type,
         var.market_type,
         tostring(var.block_device_size),
+        tostring(var.encrypt_root_volume),
       ]))
     }
   }
