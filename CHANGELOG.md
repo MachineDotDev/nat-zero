@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/MachineDotDev/nat-zero/compare/v0.2.1...v0.3.0) (2026-03-03)
+
+
+### Features
+
+* configurable EBS root volume encryption ([#14](https://github.com/MachineDotDev/nat-zero/issues/14)) ([4663b8c](https://github.com/MachineDotDev/nat-zero/commit/4663b8cb1ec4d78271299bd7c08855de42e4de89))
+
 ## [0.2.1](https://github.com/MachineDotDev/nat-zero/compare/v0.2.0...v0.2.1) (2026-03-01)
 
 
