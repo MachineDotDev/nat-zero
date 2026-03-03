@@ -99,7 +99,7 @@ See [Performance](docs/performance.md) for detailed timings and cost breakdowns.
 - **EventBridge scope**: Captures all EC2 state changes in the account; Lambda filters by VPC ID.
 - **Startup delay**: First workload in an idle AZ waits ~10 seconds for internet. Design scripts to retry outbound connections.
 - **Dual ENI**: Persistent public + private ENIs survive stop/start cycles.
-- **DLQ**: Failed Lambda invocations go to an SQS dead letter queue.
+- **Retries**: Failed Lambda invocations are retried up to 2 times by EventBridge.
 - **Clean destroy**: A cleanup action terminates NAT instances before `terraform destroy` removes ENIs.
 - **Config versioning**: Changing AMI or instance type auto-replaces NAT instances on next workload event.
 - **EC2 events only**: Currently nat-zero responds only to EC2 instance state changes. If you have a use case for other event sources (ECS tasks, Lambda, etc.), PRs are welcome.
@@ -163,6 +163,7 @@ No modules.
 | <a name="input_custom_ami_name_pattern"></a> [custom\_ami\_name\_pattern](#input\_custom\_ami\_name\_pattern) | AMI name pattern when use\_fck\_nat\_ami is false | `string` | `null` | no |
 | <a name="input_custom_ami_owner"></a> [custom\_ami\_owner](#input\_custom\_ami\_owner) | AMI owner account ID when use\_fck\_nat\_ami is false | `string` | `null` | no |
 | <a name="input_enable_logging"></a> [enable\_logging](#input\_enable\_logging) | Create a CloudWatch log group for the Lambda function | `bool` | `true` | no |
+| <a name="input_encrypt_root_volume"></a> [encrypt\_root\_volume](#input\_encrypt\_root\_volume) | Encrypt the root EBS volume. | `bool` | `true` | no |
 | <a name="input_ignore_tag_key"></a> [ignore\_tag\_key](#input\_ignore\_tag\_key) | Tag key used to mark instances the Lambda should ignore | `string` | `"nat-zero:ignore"` | no |
 | <a name="input_ignore_tag_value"></a> [ignore\_tag\_value](#input\_ignore\_tag\_value) | Tag value used to mark instances the Lambda should ignore | `string` | `"true"` | no |
 | <a name="input_instance_type"></a> [instance\_type](#input\_instance\_type) | Instance type for the NAT instance | `string` | `"t4g.nano"` | no |

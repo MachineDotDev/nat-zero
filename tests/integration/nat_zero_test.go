@@ -71,9 +71,16 @@ func TestNatZero(t *testing.T) {
 		phases = append(phases, phase{name, d})
 		t.Logf("[TIMER] %-45s %s", name, d.Round(time.Millisecond))
 	}
+	var encryptRootVolume string
 	defer func() {
 		t.Log("")
 		t.Log("=== TIMING SUMMARY ===")
+		encryptLabel := "enabled"
+		if encryptRootVolume == "false" {
+			encryptLabel = "disabled"
+		}
+		t.Logf("  EBS Encryption: %s", encryptLabel)
+		t.Log("")
 		t.Logf("  %-45s %s", "PHASE", "DURATION")
 		t.Log("  " + strings.Repeat("-", 60))
 		var total time.Duration
@@ -121,6 +128,7 @@ func TestNatZero(t *testing.T) {
 	vpcID := terraform.Output(t, opts, "vpc_id")
 	privateSubnet := terraform.Output(t, opts, "private_subnet_id")
 	lambdaName := terraform.Output(t, opts, "lambda_function_name")
+	encryptRootVolume = terraform.Output(t, opts, "encrypt_root_volume")
 	t.Logf("VPC: %s, private subnet: %s, Lambda: %s", vpcID, privateSubnet, lambdaName)
 
 	// Terminate test workload instances before terraform destroy.

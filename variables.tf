@@ -62,6 +62,12 @@ variable "block_device_size" {
   description = "Size in GB of the root EBS volume"
 }
 
+variable "encrypt_root_volume" {
+  type        = bool
+  default     = true
+  description = "Encrypt the root EBS volume."
+}
+
 # AMI configuration
 variable "use_fck_nat_ami" {
   type        = bool

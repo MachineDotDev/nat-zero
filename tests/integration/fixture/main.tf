@@ -66,6 +66,11 @@ variable "nat_instance_type" {
   default = "t4g.nano"
 }
 
+variable "encrypt_root_volume" {
+  type    = bool
+  default = true
+}
+
 module "nat_zero" {
   source = "../../../"
 
@@ -78,8 +83,9 @@ module "nat_zero" {
   private_route_table_ids     = [aws_route_table.private.id]
   private_subnets_cidr_blocks = [aws_subnet.private.cidr_block]
 
-  instance_type = var.nat_instance_type
-  market_type   = "on-demand"
+  instance_type       = var.nat_instance_type
+  market_type         = "on-demand"
+  encrypt_root_volume = var.encrypt_root_volume
 }
 
 output "vpc_id" {
@@ -96,4 +102,8 @@ output "lambda_function_name" {
 
 output "nat_security_group_ids" {
   value = module.nat_zero.nat_security_group_ids
+}
+
+output "encrypt_root_volume" {
+  value = var.encrypt_root_volume
 }

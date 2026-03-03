@@ -118,6 +118,20 @@ module "nat_zero" {
 }
 ```
 
+## Disable Root Volume Encryption
+
+The root EBS volume is encrypted by default. To disable encryption (e.g., for environments without compliance requirements):
+
+```hcl
+module "nat_zero" {
+  source = "github.com/MachineDotDev/nat-zero"
+
+  # ... required variables ...
+
+  encrypt_root_volume = false
+}
+```
+
 ## Building Lambda Locally
 
 For development or if you want to build from source:
