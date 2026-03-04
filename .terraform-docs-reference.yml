@@ -3,3 +3,6 @@ formatter: "markdown table"
 output:
   template: |
     {{ .Content }}
+
+settings:
+  lockfile: false

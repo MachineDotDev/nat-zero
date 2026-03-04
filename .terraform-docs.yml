@@ -1,1 +1,4 @@
 formatter: "markdown table"
+
+settings:
+  lockfile: false
