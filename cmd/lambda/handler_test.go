@@ -129,9 +129,6 @@ func TestReconcileScaleUp(t *testing.T) {
 				}},
 			}, nil
 		}
-		mock.DescribeImagesFn = func(ctx context.Context, params *ec2.DescribeImagesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeImagesOutput, error) {
-			return &ec2.DescribeImagesOutput{Images: []ec2types.Image{}}, nil
-		}
 		mock.RunInstancesFn = func(ctx context.Context, params *ec2.RunInstancesInput, optFns ...func(*ec2.Options)) (*ec2.RunInstancesOutput, error) {
 			return &ec2.RunInstancesOutput{
 				Instances: []ec2types.Instance{{InstanceId: aws.String("i-new1")}},
@@ -760,9 +757,6 @@ func TestReconcileNATEvent(t *testing.T) {
 					LaunchTemplateId: aws.String("lt-123"), VersionNumber: aws.Int64(1),
 				}},
 			}, nil
-		}
-		mock.DescribeImagesFn = func(ctx context.Context, params *ec2.DescribeImagesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeImagesOutput, error) {
-			return &ec2.DescribeImagesOutput{Images: []ec2types.Image{}}, nil
 		}
 		mock.RunInstancesFn = func(ctx context.Context, params *ec2.RunInstancesInput, optFns ...func(*ec2.Options)) (*ec2.RunInstancesOutput, error) {
 			return &ec2.RunInstancesOutput{

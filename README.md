@@ -7,7 +7,7 @@
 
 nat-zero is a Terraform module that replaces always-on NAT with on-demand NAT instances. When a workload launches in a private subnet, a NAT instance starts automatically. When the last workload stops, the NAT shuts down and its Elastic IP is released. Idle cost: ~$0.80/month per AZ.
 
-By default, nat-zero uses a first-party AMI path (arm64 + AL2023 minimal) for deterministic dual-ENI NAT behavior. Custom AMI lookup and explicit AMI ID override are also supported. Orchestrated by a single Go Lambda (~55 ms cold start, 29 MB memory). Integration-tested against real AWS infrastructure on every PR.
+By default, nat-zero uses a first-party AMI path (arm64 + AL2023 minimal) for deterministic dual-ENI NAT behavior. Custom AMI lookup and explicit `ami_id` selection are also supported. Orchestrated by a single Go Lambda (~55 ms cold start, 29 MB memory). Integration-tested against real AWS infrastructure on every PR.
 
 ```
    AZ-A (active)               AZ-B (idle)
@@ -86,9 +86,11 @@ See [Examples](docs/examples.md) for spot instances, first-party AMIs, custom AM
 
 nat-zero AMI selection precedence is deterministic:
 
-1. `ami_id` explicit override
+1. `ami_id` explicit AMI ID
 2. custom owner/pattern lookup (`custom_ami_owner`, `custom_ami_name_pattern`)
 3. default first-party lookup (`first_party_ami_owner`, `first_party_ami_name_pattern`)
+
+AMI resolution happens in Terraform and is written into the launch template. Lambda does not do runtime AMI lookup or AMI override logic.
 
 First-party AMI lookup is enabled by default:
 
@@ -187,12 +189,13 @@ No modules.
 | [null_resource.download_lambda](https://registry.terraform.io/providers/hashicorp/null/latest/docs/resources/resource) | resource |
 | [time_sleep.eventbridge_propagation](https://registry.terraform.io/providers/hashicorp/time/latest/docs/resources/sleep) | resource |
 | [time_sleep.lambda_ready](https://registry.terraform.io/providers/hashicorp/time/latest/docs/resources/sleep) | resource |
+| [aws_ami.selected](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/ami) | data source |
 
 ## Inputs
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
-| <a name="input_ami_id"></a> [ami\_id](#input\_ami\_id) | Explicit AMI ID to use (overrides AMI lookup entirely) | `string` | `null` | no |
+| <a name="input_ami_id"></a> [ami\_id](#input\_ami\_id) | Explicit AMI ID to use directly (skips owner/name-pattern AMI lookup) | `string` | `null` | no |
 | <a name="input_availability_zones"></a> [availability\_zones](#input\_availability\_zones) | List of availability zones to deploy NAT instances in | `list(string)` | n/a | yes |
 | <a name="input_block_device_size"></a> [block\_device\_size](#input\_block\_device\_size) | Size in GB of the root EBS volume | `number` | `10` | no |
 | <a name="input_build_lambda_locally"></a> [build\_lambda\_locally](#input\_build\_lambda\_locally) | Build the Lambda binary from Go source instead of downloading a pre-compiled release. Requires Go and zip installed locally. | `bool` | `false` | no |

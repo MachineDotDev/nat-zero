@@ -384,31 +384,13 @@ func TestCreateNAT(t *testing.T) {
 		}
 	}
 
-	t.Run("default lookup uses first-party owner and pattern", func(t *testing.T) {
+	t.Run("uses launch template image only", func(t *testing.T) {
 		mock := &mockEC2{}
 		setupLT(mock)
-		mock.DescribeImagesFn = func(ctx context.Context, params *ec2.DescribeImagesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeImagesOutput, error) {
-			if got, want := params.Owners, []string{"self"}; len(got) != 1 || got[0] != want[0] {
-				t.Fatalf("owners = %v, want %v", got, want)
-			}
-			foundNameFilter := false
-			for _, f := range params.Filters {
-				if aws.ToString(f.Name) == "name" && len(f.Values) == 1 && f.Values[0] == "nat-zero-al2023-minimal-arm64-*" {
-					foundNameFilter = true
-				}
-			}
-			if !foundNameFilter {
-				t.Fatalf("missing expected first-party name filter: %#v", params.Filters)
-			}
-			return &ec2.DescribeImagesOutput{
-				Images: []ec2types.Image{{
-					ImageId:      aws.String("ami-firstparty"),
-					Name:         aws.String("nat-zero-al2023-minimal-arm64-20240101"),
-					CreationDate: aws.String("2024-01-01T00:00:00.000Z"),
-				}},
-			}, nil
-		}
 		mock.RunInstancesFn = func(ctx context.Context, params *ec2.RunInstancesInput, optFns ...func(*ec2.Options)) (*ec2.RunInstancesOutput, error) {
+			if params.ImageId != nil {
+				t.Fatalf("expected ImageId nil, got %q", aws.ToString(params.ImageId))
+			}
 			return &ec2.RunInstancesOutput{
 				Instances: []ec2types.Instance{{InstanceId: aws.String("i-new1")}},
 			}, nil
@@ -420,89 +402,24 @@ func TestCreateNAT(t *testing.T) {
 		}
 	})
 
-	t.Run("custom lookup owner and pattern are respected", func(t *testing.T) {
+	t.Run("uses latest launch template version", func(t *testing.T) {
 		mock := &mockEC2{}
 		setupLT(mock)
-		mock.DescribeImagesFn = func(ctx context.Context, params *ec2.DescribeImagesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeImagesOutput, error) {
-			if got, want := params.Owners, []string{"123456789012"}; len(got) != 1 || got[0] != want[0] {
-				t.Fatalf("owners = %v, want %v", got, want)
-			}
-			foundNameFilter := false
-			for _, f := range params.Filters {
-				if aws.ToString(f.Name) == "name" && len(f.Values) == 1 && f.Values[0] == "my-nat-ami-*" {
-					foundNameFilter = true
-				}
-			}
-			if !foundNameFilter {
-				t.Fatalf("missing expected custom name filter: %#v", params.Filters)
-			}
-			return &ec2.DescribeImagesOutput{
-				Images: []ec2types.Image{{
-					ImageId:      aws.String("ami-custom"),
-					Name:         aws.String("my-nat-ami-20260301"),
-					CreationDate: aws.String("2026-03-01T00:00:00.000Z"),
-				}},
-			}, nil
-		}
 		mock.RunInstancesFn = func(ctx context.Context, params *ec2.RunInstancesInput, optFns ...func(*ec2.Options)) (*ec2.RunInstancesOutput, error) {
-			if got := aws.ToString(params.ImageId); got != "ami-custom" {
-				t.Fatalf("image_id = %q, want %q", got, "ami-custom")
+			if got := aws.ToString(params.LaunchTemplate.LaunchTemplateId); got != "lt-123" {
+				t.Fatalf("launch_template_id = %q, want %q", got, "lt-123")
+			}
+			if got := aws.ToString(params.LaunchTemplate.Version); got != "1" {
+				t.Fatalf("launch_template_version = %q, want %q", got, "1")
 			}
 			return &ec2.RunInstancesOutput{
 				Instances: []ec2types.Instance{{InstanceId: aws.String("i-custom1")}},
 			}, nil
 		}
 		h := newTestHandler(mock)
-		h.AMIOwner = "123456789012"
-		h.AMIPattern = "my-nat-ami-*"
 		result := h.createNAT(context.Background(), testAZ, testVPC)
 		if result != "i-custom1" {
 			t.Errorf("expected i-custom1, got %s", result)
-		}
-	})
-
-	t.Run("ami override bypasses AMI lookup", func(t *testing.T) {
-		mock := &mockEC2{}
-		setupLT(mock)
-		mock.RunInstancesFn = func(ctx context.Context, params *ec2.RunInstancesInput, optFns ...func(*ec2.Options)) (*ec2.RunInstancesOutput, error) {
-			if got := aws.ToString(params.ImageId); got != "ami-explicit" {
-				t.Fatalf("image_id = %q, want %q", got, "ami-explicit")
-			}
-			return &ec2.RunInstancesOutput{
-				Instances: []ec2types.Instance{{InstanceId: aws.String("i-explicit1")}},
-			}, nil
-		}
-		h := newTestHandler(mock)
-		h.AMIOverride = "ami-explicit"
-		result := h.createNAT(context.Background(), testAZ, testVPC)
-		if result != "i-explicit1" {
-			t.Errorf("expected i-explicit1, got %s", result)
-		}
-		if mock.callCount("DescribeImages") != 0 {
-			t.Errorf("expected no DescribeImages, got %d", mock.callCount("DescribeImages"))
-		}
-	})
-
-	t.Run("empty owner and pattern skips lookup and relies on launch template image", func(t *testing.T) {
-		mock := &mockEC2{}
-		setupLT(mock)
-		mock.RunInstancesFn = func(ctx context.Context, params *ec2.RunInstancesInput, optFns ...func(*ec2.Options)) (*ec2.RunInstancesOutput, error) {
-			if params.ImageId != nil {
-				t.Fatalf("expected ImageId nil, got %q", aws.ToString(params.ImageId))
-			}
-			return &ec2.RunInstancesOutput{
-				Instances: []ec2types.Instance{{InstanceId: aws.String("i-lt-image")}},
-			}, nil
-		}
-		h := newTestHandler(mock)
-		h.AMIOwner = ""
-		h.AMIPattern = ""
-		result := h.createNAT(context.Background(), testAZ, testVPC)
-		if result != "i-lt-image" {
-			t.Errorf("expected i-lt-image, got %s", result)
-		}
-		if mock.callCount("DescribeImages") != 0 {
-			t.Errorf("expected no DescribeImages, got %d", mock.callCount("DescribeImages"))
 		}
 	})
 
@@ -521,9 +438,6 @@ func TestCreateNAT(t *testing.T) {
 	t.Run("run instances fails", func(t *testing.T) {
 		mock := &mockEC2{}
 		setupLT(mock)
-		mock.DescribeImagesFn = func(ctx context.Context, params *ec2.DescribeImagesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeImagesOutput, error) {
-			return &ec2.DescribeImagesOutput{Images: []ec2types.Image{}}, nil
-		}
 		mock.RunInstancesFn = func(ctx context.Context, params *ec2.RunInstancesInput, optFns ...func(*ec2.Options)) (*ec2.RunInstancesOutput, error) {
 			return nil, fmt.Errorf("InsufficientInstanceCapacity: No capacity")
 		}
@@ -537,9 +451,6 @@ func TestCreateNAT(t *testing.T) {
 	t.Run("config version tag included", func(t *testing.T) {
 		mock := &mockEC2{}
 		setupLT(mock)
-		mock.DescribeImagesFn = func(ctx context.Context, params *ec2.DescribeImagesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeImagesOutput, error) {
-			return &ec2.DescribeImagesOutput{Images: []ec2types.Image{}}, nil
-		}
 		mock.RunInstancesFn = func(ctx context.Context, params *ec2.RunInstancesInput, optFns ...func(*ec2.Options)) (*ec2.RunInstancesOutput, error) {
 			if len(params.TagSpecifications) == 0 {
 				t.Error("expected TagSpecifications")

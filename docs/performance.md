@@ -42,7 +42,7 @@ The ~8 second gap is EC2 instance lifecycle (placement, OS boot, iptables config
 ~8.5 s   Workload can reach the internet
 ```
 
-Restart is ~2 seconds faster — `StartInstances` skips AMI resolution and launch template processing.
+Restart is ~2 seconds faster — `StartInstances` avoids instance creation and AMI boot initialization work.
 
 ## Lambda Execution
 

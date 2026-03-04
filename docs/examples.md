@@ -149,6 +149,8 @@ AMI selection precedence is:
 2. custom owner/pattern
 3. default first-party lookup
 
+AMI selection is fully resolved by Terraform and written to the launch template. The Lambda does not perform AMI lookup at runtime.
+
 ## Disable Root Volume Encryption
 
 The root EBS volume is encrypted by default. To disable encryption (e.g., for environments without compliance requirements):

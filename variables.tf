@@ -83,7 +83,7 @@ variable "use_fck_nat_ami" {
 variable "ami_id" {
   type        = string
   default     = null
-  description = "Explicit AMI ID to use (overrides AMI lookup entirely)"
+  description = "Explicit AMI ID to use directly (skips owner/name-pattern AMI lookup)"
 }
 
 variable "use_first_party_ami" {

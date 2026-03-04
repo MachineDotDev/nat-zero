@@ -169,7 +169,7 @@ Control-plane lifecycle (instance/EIP orchestration) remains in the nat-zero Lam
 
 ## Config Versioning
 
-The Lambda tags each NAT instance with a `ConfigVersion` hash derived from AMI, instance type, market type, volume size, and encryption setting.
+The Lambda tags each NAT instance with a `ConfigVersion` hash derived from the Terraform-resolved AMI ID, instance type, market type, volume size, and encryption setting.
 
 When the reconciler detects an outdated NAT, replacement takes two events (following the "one action per invocation" pattern):
 

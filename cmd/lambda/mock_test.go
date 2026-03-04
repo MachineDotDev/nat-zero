@@ -22,7 +22,6 @@ type mockEC2 struct {
 	ReleaseAddressFn                 func(ctx context.Context, params *ec2.ReleaseAddressInput, optFns ...func(*ec2.Options)) (*ec2.ReleaseAddressOutput, error)
 	DescribeAddressesFn              func(ctx context.Context, params *ec2.DescribeAddressesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeAddressesOutput, error)
 	DescribeNetworkInterfacesFn      func(ctx context.Context, params *ec2.DescribeNetworkInterfacesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeNetworkInterfacesOutput, error)
-	DescribeImagesFn                 func(ctx context.Context, params *ec2.DescribeImagesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeImagesOutput, error)
 	DescribeLaunchTemplatesFn        func(ctx context.Context, params *ec2.DescribeLaunchTemplatesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeLaunchTemplatesOutput, error)
 	DescribeLaunchTemplateVersionsFn func(ctx context.Context, params *ec2.DescribeLaunchTemplateVersionsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeLaunchTemplateVersionsOutput, error)
 
@@ -142,14 +141,6 @@ func (m *mockEC2) DescribeNetworkInterfaces(ctx context.Context, params *ec2.Des
 	return &ec2.DescribeNetworkInterfacesOutput{}, nil
 }
 
-func (m *mockEC2) DescribeImages(ctx context.Context, params *ec2.DescribeImagesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeImagesOutput, error) {
-	m.track("DescribeImages", params)
-	if m.DescribeImagesFn != nil {
-		return m.DescribeImagesFn(ctx, params, optFns...)
-	}
-	return &ec2.DescribeImagesOutput{}, nil
-}
-
 func (m *mockEC2) DescribeLaunchTemplates(ctx context.Context, params *ec2.DescribeLaunchTemplatesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeLaunchTemplatesOutput, error) {
 	m.track("DescribeLaunchTemplates", params)
 	if m.DescribeLaunchTemplatesFn != nil {
@@ -220,9 +211,6 @@ func newTestHandler(mock *mockEC2) *Handler {
 		IgnoreTagKey:   "nat-zero:ignore",
 		IgnoreTagValue: "true",
 		TargetVPC:      testVPC,
-		AMIOwner:       "self",
-		AMIPattern:     "nat-zero-al2023-minimal-arm64-*",
-		AMIOverride:    "",
 		ConfigVersion:  "",
 	}
 }

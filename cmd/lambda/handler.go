@@ -20,9 +20,6 @@ type Handler struct {
 	IgnoreTagKey   string
 	IgnoreTagValue string
 	TargetVPC      string
-	AMIOwner       string
-	AMIPattern     string
-	AMIOverride    string
 	ConfigVersion  string
 }
 
