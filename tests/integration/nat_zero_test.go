@@ -251,9 +251,7 @@ func TestNatZero(t *testing.T) {
 
 	t.Run("NATReplacedOnTerraformAMIChange", func(t *testing.T) {
 		replacementAMI := strings.TrimSpace(os.Getenv("NAT_AMI_REPLACEMENT_ID"))
-		if replacementAMI == "" {
-			t.Skip("Set NAT_AMI_REPLACEMENT_ID to run AMI replacement integration coverage")
-		}
+		require.NotEmpty(t, replacementAMI, "NAT_AMI_REPLACEMENT_ID must be set for AMI replacement integration coverage")
 		require.NotEmpty(t, workloadID, "Phase 1 must set workloadID")
 
 		var oldNAT *ec2.Instance
@@ -268,9 +266,7 @@ func TestNatZero(t *testing.T) {
 
 		oldNATID := aws.StringValue(oldNAT.InstanceId)
 		oldImageID := aws.StringValue(oldNAT.ImageId)
-		if oldImageID == replacementAMI {
-			t.Skipf("Running NAT already uses replacement AMI %s", replacementAMI)
-		}
+		require.NotEqual(t, oldImageID, replacementAMI, "replacement AMI must differ from the current NAT AMI")
 
 		if opts.Vars == nil {
 			opts.Vars = map[string]interface{}{}

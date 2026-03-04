@@ -4,11 +4,6 @@ on:
   pull_request:
     types: [labeled]
   workflow_dispatch:
-    inputs:
-      nat_ami_replacement_id:
-        description: Optional AMI ID to run NAT AMI replacement integration coverage
-        required: false
-        type: string
 
 concurrency:
   group: nat-zero-integration
@@ -24,7 +19,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       github.event.label.name == 'integration-test'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     environment: integration
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -50,14 +45,102 @@ jobs:
           mkdir -p ../../.build
           cp lambda.zip ../../.build/lambda.zip
 
+      - name: Build replacement test AMI (us-east-1)
+        id: replacement_ami
+        run: |
+          set -euo pipefail
+
+          SOURCE_AMI_ID="$(aws ec2 describe-images \
+            --region us-east-1 \
+            --owners self \
+            --filters \
+              Name=name,Values=nat-zero-al2023-minimal-arm64-* \
+              Name=state,Values=available \
+            --query 'sort_by(Images,&CreationDate)[-1].ImageId' \
+            --output text)"
+
+          if [[ -z "${SOURCE_AMI_ID}" || "${SOURCE_AMI_ID}" == "None" ]]; then
+            echo "No source first-party AMI found in us-east-1" >&2
+            exit 1
+          fi
+
+          SUBNET_ID="$(aws ec2 describe-subnets \
+            --region us-east-1 \
+            --filters Name=default-for-az,Values=true \
+            --query 'Subnets[0].SubnetId' \
+            --output text)"
+
+          if [[ -z "${SUBNET_ID}" || "${SUBNET_ID}" == "None" ]]; then
+            echo "No default subnet found in us-east-1" >&2
+            exit 1
+          fi
+
+          INSTANCE_ID="$(aws ec2 run-instances \
+            --region us-east-1 \
+            --image-id "${SOURCE_AMI_ID}" \
+            --instance-type t4g.nano \
+            --subnet-id "${SUBNET_ID}" \
+            --associate-public-ip-address \
+            --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=nat-zero-inttest-ami-builder},{Key=nat-zero:test,Value=true}]" \
+            --query 'Instances[0].InstanceId' \
+            --output text)"
+
+          aws ec2 wait instance-running --region us-east-1 --instance-ids "${INSTANCE_ID}"
+
+          REPLACEMENT_AMI_ID="$(aws ec2 create-image \
+            --region us-east-1 \
+            --instance-id "${INSTANCE_ID}" \
+            --name "nat-zero-inttest-replacement-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --description "nat-zero integration replacement AMI from ${SOURCE_AMI_ID}" \
+            --no-reboot \
+            --tag-specifications \
+              "ResourceType=image,Tags=[{Key=Name,Value=nat-zero-inttest-replacement},{Key=nat-zero:test,Value=true}]" \
+              "ResourceType=snapshot,Tags=[{Key=Name,Value=nat-zero-inttest-replacement},{Key=nat-zero:test,Value=true}]" \
+            --query 'ImageId' \
+            --output text)"
+
+          aws ec2 wait image-available --region us-east-1 --image-ids "${REPLACEMENT_AMI_ID}"
+          aws ec2 terminate-instances --region us-east-1 --instance-ids "${INSTANCE_ID}" >/dev/null
+          aws ec2 wait instance-terminated --region us-east-1 --instance-ids "${INSTANCE_ID}"
+
+          echo "SOURCE_AMI_ID=${SOURCE_AMI_ID}" >> "$GITHUB_ENV"
+          echo "REPLACEMENT_AMI_ID=${REPLACEMENT_AMI_ID}" >> "$GITHUB_ENV"
+          echo "NAT_AMI_REPLACEMENT_ID=${REPLACEMENT_AMI_ID}" >> "$GITHUB_ENV"
+
+          echo "source_ami_id=${SOURCE_AMI_ID}" >> "$GITHUB_OUTPUT"
+          echo "replacement_ami_id=${REPLACEMENT_AMI_ID}" >> "$GITHUB_OUTPUT"
+          echo "builder_instance_id=${INSTANCE_ID}" >> "$GITHUB_OUTPUT"
+
       - name: Test
         working-directory: tests/integration
         env:
-          NAT_AMI_REPLACEMENT_ID: ${{ github.event.inputs.nat_ami_replacement_id || '' }}
+          NAT_AMI_REPLACEMENT_ID: ${{ env.NAT_AMI_REPLACEMENT_ID }}
+        run: go test -v -timeout 45m -count=1
+
+      - name: Cleanup replacement test AMI
+        if: always()
+        env:
+          REPLACEMENT_AMI_ID: ${{ steps.replacement_ami.outputs.replacement_ami_id }}
+          BUILDER_INSTANCE_ID: ${{ steps.replacement_ami.outputs.builder_instance_id }}
         run: |
-          if [[ -n "${NAT_AMI_REPLACEMENT_ID}" ]]; then
-            echo "Running integration tests with AMI replacement coverage using ${NAT_AMI_REPLACEMENT_ID}"
-          else
-            echo "Running standard integration tests (AMI replacement coverage skipped)"
+          set +euo pipefail
+
+          if [[ -n "${BUILDER_INSTANCE_ID}" && "${BUILDER_INSTANCE_ID}" != "None" ]]; then
+            aws ec2 terminate-instances --region us-east-1 --instance-ids "${BUILDER_INSTANCE_ID}" >/dev/null 2>&1 || true
           fi
-          go test -v -timeout 25m -count=1
+
+          if [[ -n "${REPLACEMENT_AMI_ID}" && "${REPLACEMENT_AMI_ID}" != "None" ]]; then
+            SNAPSHOT_IDS="$(aws ec2 describe-images \
+              --region us-east-1 \
+              --image-ids "${REPLACEMENT_AMI_ID}" \
+              --query 'Images[0].BlockDeviceMappings[].Ebs.SnapshotId' \
+              --output text 2>/dev/null || true)"
+
+            aws ec2 deregister-image --region us-east-1 --image-id "${REPLACEMENT_AMI_ID}" >/dev/null 2>&1 || true
+
+            for snapshot_id in ${SNAPSHOT_IDS}; do
+              if [[ -n "${snapshot_id}" && "${snapshot_id}" != "None" ]]; then
+                aws ec2 delete-snapshot --region us-east-1 --snapshot-id "${snapshot_id}" >/dev/null 2>&1 || true
+              fi
+            done
+          fi

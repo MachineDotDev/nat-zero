@@ -10,12 +10,10 @@ cd cmd/lambda && go test -v -race ./...
 
 # Integration tests (requires AWS credentials)
 cd tests/integration && go test -v -timeout 30m
-
-# Optional: explicitly validate NAT replacement after Terraform AMI update
-NAT_AMI_REPLACEMENT_ID=ami-0123456789abcdef0 go test -v -timeout 30m
 ```
 
 Integration tests require AWS credentials with permissions to manage EC2, IAM, Lambda, EventBridge, and CloudWatch resources.
+Set `NAT_AMI_REPLACEMENT_ID` when running locally so the AMI replacement phase can execute.
 
 ## Integration Test Lifecycle
 
@@ -58,9 +56,9 @@ The test uses [Terratest](https://terratest.gruntwork.io/) with a single `terraf
 Integration tests run in GitHub Actions when the `integration-test` label is added to a PR. They use OIDC to assume an AWS role in a dedicated test account.
 
 - Concurrency: one test at a time (`cancel-in-progress: false`)
-- Timeout: 30 minutes
+- Timeout: 60 minutes
 - Region: us-east-1
-- `workflow_dispatch` supports optional input `nat_ami_replacement_id` to run AMI replacement coverage in CI.
+- CI workflow always builds a temporary replacement AMI in us-east-1 and runs AMI replacement coverage.
 
 ## Orphan Detection
 
@@ -70,7 +68,7 @@ Integration tests run in GitHub Actions when the `integration-test` label is add
 
 The Lambda tags NAT instances with a `ConfigVersion` hash (AMI + instance type + market type + volume size + encryption). When the config changes and a workload triggers reconciliation, the Lambda terminates the outdated NAT and creates a replacement.
 
-The integration test includes an optional replacement phase gated by `NAT_AMI_REPLACEMENT_ID` so normal CI remains fast. When set, the test:
+The integration workflow always sets `NAT_AMI_REPLACEMENT_ID` using a temporary AMI built in us-east-1, then the test:
 
 1. Runs `terraform apply` with `ami_id` set to the provided AMI
 2. Invokes Lambda reconciliation for the running workload
