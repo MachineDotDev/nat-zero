@@ -88,11 +88,10 @@ module "nat_zero" {
   private_route_table_ids     = [aws_route_table.private.id]
   private_subnets_cidr_blocks = [aws_subnet.private.cidr_block]
 
-  instance_type        = var.nat_instance_type
-  market_type          = "on-demand"
-  encrypt_root_volume  = var.encrypt_root_volume
-  ami_id               = var.nat_ami_id
-  build_lambda_locally = true
+  instance_type       = var.nat_instance_type
+  market_type         = "on-demand"
+  encrypt_root_volume = var.encrypt_root_volume
+  ami_id              = var.nat_ami_id
 }
 
 output "vpc_id" {

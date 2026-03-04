@@ -117,13 +117,6 @@ func TestNatZero(t *testing.T) {
 		TerraformDir: "./fixture",
 		NoColor:      true,
 	})
-	if natAMI := strings.TrimSpace(os.Getenv("NAT_AMI_ID")); natAMI != "" {
-		if opts.Vars == nil {
-			opts.Vars = map[string]interface{}{}
-		}
-		opts.Vars["nat_ami_id"] = natAMI
-		t.Logf("Using NAT_AMI_ID override for module NAT instances: %s", natAMI)
-	}
 	defer func() {
 		destroyStart := time.Now()
 		terraform.Destroy(t, opts)
@@ -256,6 +249,94 @@ func TestNatZero(t *testing.T) {
 		t.Logf("Confirmed: workload egresses via NAT EIP %s", natEIP)
 	})
 
+	t.Run("NATReplacedOnTerraformAMIChange", func(t *testing.T) {
+		replacementAMI := strings.TrimSpace(os.Getenv("NAT_AMI_REPLACEMENT_ID"))
+		if replacementAMI == "" {
+			t.Skip("Set NAT_AMI_REPLACEMENT_ID to run AMI replacement integration coverage")
+		}
+		require.NotEmpty(t, workloadID, "Phase 1 must set workloadID")
+
+		var oldNAT *ec2.Instance
+		nats := findNATInstances(t, ec2Client, vpcID)
+		for _, n := range nats {
+			if aws.StringValue(n.State.Name) == "running" {
+				oldNAT = n
+				break
+			}
+		}
+		require.NotNil(t, oldNAT, "expected running NAT before AMI update")
+
+		oldNATID := aws.StringValue(oldNAT.InstanceId)
+		oldImageID := aws.StringValue(oldNAT.ImageId)
+		if oldImageID == replacementAMI {
+			t.Skipf("Running NAT already uses replacement AMI %s", replacementAMI)
+		}
+
+		if opts.Vars == nil {
+			opts.Vars = map[string]interface{}{}
+		}
+		opts.Vars["nat_ami_id"] = replacementAMI
+
+		t.Logf("Applying Terraform with nat_ami_id=%s", replacementAMI)
+		applyStart := time.Now()
+		terraform.Apply(t, opts)
+		record("Terraform apply (NAT AMI change)", time.Since(applyStart))
+
+		// First reconcile should terminate outdated NAT.
+		invokeLambda(t, lambdaClient, lambdaName, map[string]string{
+			"instance_id": workloadID,
+			"state":       "running",
+		})
+
+		retry.DoWithRetry(t, "old NAT terminated", 120, 2*time.Second, func() (string, error) {
+			nats := findNATInstancesInState(t, ec2Client, vpcID, []string{
+				"pending", "running", "stopping", "stopped", "shutting-down",
+			})
+			for _, n := range nats {
+				if aws.StringValue(n.InstanceId) == oldNATID {
+					return "", fmt.Errorf("old NAT still present in state %s", aws.StringValue(n.State.Name))
+				}
+			}
+			return "OK", nil
+		})
+
+		// Second reconcile should create/restart NAT from updated launch template image.
+		invokeLambda(t, lambdaClient, lambdaName, map[string]string{
+			"instance_id": workloadID,
+			"state":       "running",
+		})
+
+		var replacementNAT *ec2.Instance
+		retry.DoWithRetry(t, "replacement NAT running on new AMI", 120, 2*time.Second, func() (string, error) {
+			nats := findNATInstances(t, ec2Client, vpcID)
+			for _, n := range nats {
+				if aws.StringValue(n.InstanceId) == oldNATID {
+					continue
+				}
+				if aws.StringValue(n.ImageId) != replacementAMI {
+					continue
+				}
+				if aws.StringValue(n.State.Name) != "running" {
+					return "", fmt.Errorf("replacement NAT in state %s", aws.StringValue(n.State.Name))
+				}
+				for _, eni := range n.NetworkInterfaces {
+					if aws.Int64Value(eni.Attachment.DeviceIndex) == 0 &&
+						eni.Association != nil && eni.Association.PublicIp != nil {
+						replacementNAT = n
+						return "OK", nil
+					}
+				}
+				return "", fmt.Errorf("replacement NAT running but no EIP yet")
+			}
+			return "", fmt.Errorf("replacement NAT with AMI %s not found yet", replacementAMI)
+		})
+
+		require.NotNil(t, replacementNAT, "replacement NAT should exist")
+		assertRouteTableEntry(t, ec2Client, vpcID, replacementNAT)
+		t.Logf("Confirmed NAT replacement: %s (%s) -> %s (%s)",
+			oldNATID, oldImageID, aws.StringValue(replacementNAT.InstanceId), replacementAMI)
+	})
+
 	// ── Phase 2: NAT scale-down ─────────────────────────────────────────
 	// Terminate the workload and let EventBridge drive the full
 	// scale-down flow: stop NAT, then detach/release EIP.
@@ -273,10 +354,8 @@ func TestNatZero(t *testing.T) {
 		require.NoError(t, err)
 		record("Terminate workload instance", time.Since(termStart))
 
-		// Wait for NAT to reach a terminal non-running state.
-		// In some accounts/regions the NAT can already be gone by the time
-		// this poll runs, which is still a valid scale-down outcome.
-		t.Log("Waiting for NAT to stop or terminate (via EventBridge)...")
+		// Wait for NAT to reach stopped state.
+		t.Log("Waiting for NAT to stop (via EventBridge)...")
 		stopStart := time.Now()
 		retry.DoWithRetry(t, "NAT stopped", 100, 2*time.Second, func() (string, error) {
 			nats := findNATInstancesInState(t, ec2Client, vpcID,
@@ -291,11 +370,11 @@ func TestNatZero(t *testing.T) {
 				}
 				return "", fmt.Errorf("NAT in unexpected state: %s", state)
 			}
-			return "OK", nil
+			return "", fmt.Errorf("no NAT instances found")
 		})
 		natStopTime := time.Since(stopStart)
-		record("Wait for NAT stopped/terminated", natStopTime)
-		t.Logf("NAT reached terminal non-running state in %s", natStopTime.Round(time.Second))
+		record("Wait for NAT stopped", natStopTime)
+		t.Logf("NAT stopped in %s", natStopTime.Round(time.Second))
 
 		// EventBridge fires the NAT's stopping/stopped events which trigger
 		// the Lambda to detach and release the EIP automatically.

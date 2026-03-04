@@ -10,6 +10,9 @@ cd cmd/lambda && go test -v -race ./...
 
 # Integration tests (requires AWS credentials)
 cd tests/integration && go test -v -timeout 30m
+
+# Optional: explicitly validate NAT replacement after Terraform AMI update
+NAT_AMI_REPLACEMENT_ID=ami-0123456789abcdef0 go test -v -timeout 30m
 ```
 
 Integration tests require AWS credentials with permissions to manage EC2, IAM, Lambda, EventBridge, and CloudWatch resources.
@@ -64,4 +67,10 @@ Integration tests run in GitHub Actions when the `integration-test` label is add
 
 ## Config Version Replacement
 
-The Lambda tags NAT instances with a `ConfigVersion` hash (AMI + instance type + market type + volume size + encryption). When the config changes and a workload triggers reconciliation, the Lambda terminates the outdated NAT and creates a replacement. The integration test doesn't exercise this path directly, but it's covered by unit tests.
+The Lambda tags NAT instances with a `ConfigVersion` hash (AMI + instance type + market type + volume size + encryption). When the config changes and a workload triggers reconciliation, the Lambda terminates the outdated NAT and creates a replacement.
+
+The integration test includes an optional replacement phase gated by `NAT_AMI_REPLACEMENT_ID` so normal CI remains fast. When set, the test:
+
+1. Runs `terraform apply` with `ami_id` set to the provided AMI
+2. Invokes Lambda reconciliation for the running workload
+3. Verifies the old NAT is terminated and a replacement NAT runs on the new AMI
