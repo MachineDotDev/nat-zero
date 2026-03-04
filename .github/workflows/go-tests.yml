@@ -4,11 +4,15 @@ on:
   pull_request:
     paths:
       - "cmd/lambda/**"
+      - "test/**"
+      - "tests/**"
       - ".github/workflows/go-tests.yml"
   push:
     branches: [main]
     paths:
       - "cmd/lambda/**"
+      - "test/**"
+      - "tests/**"
       - ".github/workflows/go-tests.yml"
 
 permissions:
