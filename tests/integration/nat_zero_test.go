@@ -353,7 +353,8 @@ func TestNatZero(t *testing.T) {
 		// Wait for NAT to reach stopped state.
 		t.Log("Waiting for NAT to stop (via EventBridge)...")
 		stopStart := time.Now()
-		retry.DoWithRetry(t, "NAT stopped", 100, 2*time.Second, func() (string, error) {
+		// NAT can remain in "stopping" for several minutes on some runs.
+		retry.DoWithRetry(t, "NAT stopped", 180, 2*time.Second, func() (string, error) {
 			nats := findNATInstancesInState(t, ec2Client, vpcID,
 				[]string{"pending", "running", "stopping", "stopped"})
 			for _, n := range nats {
