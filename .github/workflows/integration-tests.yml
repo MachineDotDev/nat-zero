@@ -4,6 +4,11 @@ on:
   pull_request:
     types: [labeled]
   workflow_dispatch:
+    inputs:
+      nat_ami_replacement_id:
+        description: Optional AMI ID to run NAT AMI replacement integration coverage
+        required: false
+        type: string
 
 concurrency:
   group: nat-zero-integration
@@ -19,7 +24,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       github.event.label.name == 'integration-test'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     environment: integration
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -47,4 +52,12 @@ jobs:
 
       - name: Test
         working-directory: tests/integration
-        run: go test -v -timeout 10m -count=1
+        env:
+          NAT_AMI_REPLACEMENT_ID: ${{ github.event.inputs.nat_ami_replacement_id || '' }}
+        run: |
+          if [[ -n "${NAT_AMI_REPLACEMENT_ID}" ]]; then
+            echo "Running integration tests with AMI replacement coverage using ${NAT_AMI_REPLACEMENT_ID}"
+          else
+            echo "Running standard integration tests (AMI replacement coverage skipped)"
+          fi
+          go test -v -timeout 25m -count=1

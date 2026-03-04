@@ -58,8 +58,9 @@ The test uses [Terratest](https://terratest.gruntwork.io/) with a single `terraf
 Integration tests run in GitHub Actions when the `integration-test` label is added to a PR. They use OIDC to assume an AWS role in a dedicated test account.
 
 - Concurrency: one test at a time (`cancel-in-progress: false`)
-- Timeout: 15 minutes
+- Timeout: 30 minutes
 - Region: us-east-1
+- `workflow_dispatch` supports optional input `nat_ami_replacement_id` to run AMI replacement coverage in CI.
 
 ## Orphan Detection
 
