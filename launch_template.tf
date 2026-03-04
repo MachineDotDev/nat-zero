@@ -11,7 +11,7 @@ resource "aws_launch_template" "nat_launch_template" {
   count         = length(var.availability_zones)
   name          = "${var.name}-${var.availability_zones[count.index]}-launch-template"
   instance_type = var.instance_type
-  image_id      = var.ami_id
+  image_id      = local.has_explicit_ami_id ? local.explicit_ami_id : null
 
   iam_instance_profile {
     arn = aws_iam_instance_profile.nat_instance_profile.arn

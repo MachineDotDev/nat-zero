@@ -220,8 +220,9 @@ func newTestHandler(mock *mockEC2) *Handler {
 		IgnoreTagKey:   "nat-zero:ignore",
 		IgnoreTagValue: "true",
 		TargetVPC:      testVPC,
-		AMIOwner:       "568608671756",
-		AMIPattern:     "fck-nat-al2023-*-arm64-*",
+		AMIOwner:       "self",
+		AMIPattern:     "nat-zero-al2023-minimal-arm64-*",
+		AMIOverride:    "",
 		ConfigVersion:  "",
 	}
 }

@@ -1,0 +1,57 @@
+name: Copy AMI To Enabled Regions
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ami_id:
+        description: Source AMI ID
+        required: true
+        type: string
+      source_region:
+        description: Source AMI region
+        required: true
+        default: us-east-1
+        type: string
+      wait_for_available:
+        description: Wait for copied AMIs to become available
+        required: true
+        default: false
+        type: boolean
+      dry_run:
+        description: Show planned copies without creating AMIs
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  copy:
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ secrets.AMI_PUBLISH_ROLE_ARN }}
+          aws-region: ${{ inputs.source_region }}
+
+      - name: Copy AMI
+        run: |
+          args=(
+            --source-ami-id "${{ inputs.source_ami_id }}"
+            --source-region "${{ inputs.source_region }}"
+          )
+
+          if [[ "${{ inputs.wait_for_available }}" == "true" ]]; then
+            args+=(--wait)
+          fi
+
+          if [[ "${{ inputs.dry_run }}" == "true" ]]; then
+            args+=(--dry-run)
+          fi
+
+          ./ami/first-party/scripts/copy-to-enabled-regions.sh "${args[@]}"

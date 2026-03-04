@@ -22,6 +22,7 @@ type Handler struct {
 	TargetVPC      string
 	AMIOwner       string
 	AMIPattern     string
+	AMIOverride    string
 	ConfigVersion  string
 }
 

@@ -55,7 +55,7 @@ module "nat_zero" {
   private_route_table_ids     = module.vpc.private_route_table_ids
   private_subnets_cidr_blocks = module.vpc.private_subnets_cidr_blocks
 
-  # Defaults: t4g.nano, fck-nat AMI, on-demand
+  # Defaults: t4g.nano, first-party AMI lookup, on-demand
   # Uncomment for spot instances:
   # market_type = "spot"
 
@@ -90,9 +90,9 @@ module "nat_zero" {
 }
 ```
 
-## Custom AMI
+## First-Party AMI (Default)
 
-To use a custom AMI instead of the default fck-nat AMI:
+Use the default first-party AMI lookup path (for AMIs built from `ami/first-party/`):
 
 ```hcl
 module "nat_zero" {
@@ -100,8 +100,33 @@ module "nat_zero" {
 
   # ... required variables ...
 
-  use_fck_nat_ami       = false
-  custom_ami_owner      = "123456789012"
+  use_first_party_ami = true
+
+  # Defaults:
+  # first_party_ami_owner        = "self"
+  # first_party_ami_name_pattern = "nat-zero-al2023-minimal-arm64-20260304-054741"
+}
+```
+
+Supported first-party flavor:
+
+- `arm64`
+- Amazon Linux 2023 minimal
+
+Build/publish instructions are in [`ami/first-party/README.md`](https://github.com/MachineDotDev/nat-zero/blob/main/ami/first-party/README.md).
+
+## Custom AMI
+
+To use a custom AMI instead of the default first-party AMI lookup:
+
+```hcl
+module "nat_zero" {
+  source = "github.com/MachineDotDev/nat-zero"
+
+  # ... required variables ...
+
+  use_first_party_ami     = false
+  custom_ami_owner        = "123456789012"
   custom_ami_name_pattern = "my-nat-ami-*"
 }
 ```
@@ -117,6 +142,12 @@ module "nat_zero" {
   ami_id = "ami-0123456789abcdef0"
 }
 ```
+
+AMI selection precedence is:
+
+1. `ami_id`
+2. custom owner/pattern
+3. default first-party lookup
 
 ## Disable Root Volume Encryption
 

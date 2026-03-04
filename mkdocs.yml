@@ -8,6 +8,7 @@ theme:
 nav:
   - Home: index.md
   - Architecture: architecture.md
+  - Security: security.md
   - Performance: performance.md
   - Examples: examples.md
   - Terraform Reference: reference.md

@@ -5,6 +5,15 @@ resource "aws_cloudwatch_log_group" "nat_zero_logs" {
   tags              = local.common_tags
 }
 
+locals {
+  lambda_source_fingerprints = join("", [
+    for f in sort(fileset("${path.module}/cmd/lambda", "*.go")) :
+    filesha256("${path.module}/cmd/lambda/${f}")
+  ])
+  lambda_source_hash_hex = sha256(local.lambda_source_fingerprints)
+  lambda_source_hash_b64 = base64sha256(local.lambda_source_fingerprints)
+}
+
 # create_duration:  waits for IAM role propagation before Lambda is created.
 # destroy_duration: when logging is enabled, waits for async CloudWatch log
 #                   delivery to settle before the log group is deleted.
@@ -33,10 +42,7 @@ resource "null_resource" "build_lambda" {
   count = var.build_lambda_locally ? 1 : 0
 
   triggers = {
-    source_hash = sha256(join("", [
-      for f in sort(fileset("${path.module}/cmd/lambda", "*.go")) :
-      filesha256("${path.module}/cmd/lambda/${f}")
-    ]))
+    source_hash = local.lambda_source_hash_hex
   }
 
   provisioner "local-exec" {
@@ -57,7 +63,7 @@ resource "aws_lambda_function" "nat_zero" {
   handler                        = "bootstrap"
   role                           = aws_iam_role.lambda_iam_role.arn
   runtime                        = "provided.al2023"
-  source_code_hash               = fileexists("${path.module}/.build/lambda.zip") ? filebase64sha256("${path.module}/.build/lambda.zip") : null
+  source_code_hash               = var.build_lambda_locally ? local.lambda_source_hash_b64 : (fileexists("${path.module}/.build/lambda.zip") ? filebase64sha256("${path.module}/.build/lambda.zip") : null)
   architectures                  = ["arm64"]
   timeout                        = 90
   reserved_concurrent_executions = 1
@@ -71,12 +77,13 @@ resource "aws_lambda_function" "nat_zero" {
       IGNORE_TAG_KEY    = var.ignore_tag_key
       IGNORE_TAG_VALUE  = var.ignore_tag_value
       TARGET_VPC_ID     = var.vpc_id
-      AMI_OWNER_ACCOUNT = var.use_fck_nat_ami ? "568608671756" : var.custom_ami_owner
-      AMI_NAME_PATTERN  = var.use_fck_nat_ami ? "fck-nat-al2023-*-arm64-*" : var.custom_ami_name_pattern
+      AMI_ID_OVERRIDE   = local.ami_id_override_for_lambda
+      AMI_OWNER_ACCOUNT = local.ami_owner_account_for_lambda
+      AMI_NAME_PATTERN  = local.ami_name_pattern_for_lambda
       CONFIG_VERSION = sha256(join(",", [
-        var.use_fck_nat_ami ? "568608671756" : var.custom_ami_owner,
-        var.use_fck_nat_ami ? "fck-nat-al2023-*-arm64-*" : var.custom_ami_name_pattern,
-        coalesce(var.ami_id, "none"),
+        local.ami_id_override_for_lambda != "" ? local.ami_id_override_for_lambda : "none",
+        local.ami_owner_account_for_lambda != "" ? local.ami_owner_account_for_lambda : "none",
+        local.ami_name_pattern_for_lambda != "" ? local.ami_name_pattern_for_lambda : "none",
         var.instance_type,
         var.market_type,
         tostring(var.block_device_size),

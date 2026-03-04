@@ -71,8 +71,13 @@ variable "encrypt_root_volume" {
 # AMI configuration
 variable "use_fck_nat_ami" {
   type        = bool
-  default     = true
-  description = "Use the public fck-nat AMI. Set to false to use a custom AMI."
+  default     = false
+  description = "DEPRECATED: fck-nat AMIs are unsupported. Leave false."
+
+  validation {
+    condition     = !var.use_fck_nat_ami
+    error_message = "fck-nat AMIs are unsupported in this module. Set use_fck_nat_ami = false."
+  }
 }
 
 variable "ami_id" {
@@ -81,16 +86,66 @@ variable "ami_id" {
   description = "Explicit AMI ID to use (overrides AMI lookup entirely)"
 }
 
+variable "use_first_party_ami" {
+  type        = bool
+  default     = true
+  description = "Use nat-zero first-party AMI lookup (arm64, AL2023 minimal). Enabled by default."
+
+  validation {
+    condition = var.use_first_party_ami || (
+      (var.ami_id == null ? "" : trimspace(var.ami_id)) != "" ||
+      (
+        (var.custom_ami_owner == null ? "" : trimspace(var.custom_ami_owner)) != "" &&
+        (var.custom_ami_name_pattern == null ? "" : trimspace(var.custom_ami_name_pattern)) != ""
+      )
+    )
+    error_message = "When use_first_party_ami is false, set ami_id or set both custom_ami_owner and custom_ami_name_pattern."
+  }
+}
+
+variable "first_party_ami_owner" {
+  type        = string
+  default     = "self"
+  description = "AMI owner account for first-party AMI lookup."
+
+  validation {
+    condition     = !var.use_first_party_ami || trimspace(var.first_party_ami_owner) != ""
+    error_message = "first_party_ami_owner must be non-empty when use_first_party_ami = true."
+  }
+}
+
+variable "first_party_ami_name_pattern" {
+  type        = string
+  default     = "nat-zero-al2023-minimal-arm64-20260304-054741"
+  description = "AMI name pattern for first-party AMI lookup."
+
+  validation {
+    condition     = !var.use_first_party_ami || trimspace(var.first_party_ami_name_pattern) != ""
+    error_message = "first_party_ami_name_pattern must be non-empty when use_first_party_ami = true."
+  }
+}
+
 variable "custom_ami_owner" {
   type        = string
   default     = null
-  description = "AMI owner account ID when use_fck_nat_ami is false"
+  description = "AMI owner account ID for custom AMI lookup"
+
+  validation {
+    condition = (
+      (var.custom_ami_owner == null ? "" : trimspace(var.custom_ami_owner)) == "" &&
+      (var.custom_ami_name_pattern == null ? "" : trimspace(var.custom_ami_name_pattern)) == ""
+      ) || (
+      (var.custom_ami_owner == null ? "" : trimspace(var.custom_ami_owner)) != "" &&
+      (var.custom_ami_name_pattern == null ? "" : trimspace(var.custom_ami_name_pattern)) != ""
+    )
+    error_message = "Set both custom_ami_owner and custom_ami_name_pattern, or leave both unset."
+  }
 }
 
 variable "custom_ami_name_pattern" {
   type        = string
   default     = null
-  description = "AMI name pattern when use_fck_nat_ami is false"
+  description = "AMI name pattern for custom AMI lookup"
 }
 
 variable "nat_tag_key" {

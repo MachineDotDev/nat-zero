@@ -48,9 +48,13 @@ module "nat_zero" {
   private_route_table_ids     = module.vpc.private_route_table_ids
   private_subnets_cidr_blocks = module.vpc.private_subnets_cidr_blocks
 
-  # Defaults: t4g.nano, fck-nat AMI, on-demand
+  # Defaults: t4g.nano, first-party AMI lookup, on-demand
   # Uncomment for spot instances:
   # market_type = "spot"
+  # Uncomment to use a custom AMI lookup instead:
+  # use_first_party_ami     = false
+  # custom_ami_owner        = "123456789012"
+  # custom_ami_name_pattern = "my-nat-ami-*"
 
   tags = {
     Environment = "example"

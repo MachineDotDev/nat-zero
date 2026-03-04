@@ -11,9 +11,9 @@
 
 | Name | Version |
 |------|---------|
-| <a name="provider_aws"></a> [aws](#provider\_aws) | >= 5.0 |
-| <a name="provider_null"></a> [null](#provider\_null) | >= 3.0 |
-| <a name="provider_time"></a> [time](#provider\_time) | >= 0.9 |
+| <a name="provider_aws"></a> [aws](#provider\_aws) | 6.34.0 |
+| <a name="provider_null"></a> [null](#provider\_null) | 3.2.4 |
+| <a name="provider_time"></a> [time](#provider\_time) | 0.13.1 |
 
 ## Modules
 
@@ -53,10 +53,12 @@ No modules.
 | <a name="input_availability_zones"></a> [availability\_zones](#input\_availability\_zones) | List of availability zones to deploy NAT instances in | `list(string)` | n/a | yes |
 | <a name="input_block_device_size"></a> [block\_device\_size](#input\_block\_device\_size) | Size in GB of the root EBS volume | `number` | `10` | no |
 | <a name="input_build_lambda_locally"></a> [build\_lambda\_locally](#input\_build\_lambda\_locally) | Build the Lambda binary from Go source instead of downloading a pre-compiled release. Requires Go and zip installed locally. | `bool` | `false` | no |
-| <a name="input_custom_ami_name_pattern"></a> [custom\_ami\_name\_pattern](#input\_custom\_ami\_name\_pattern) | AMI name pattern when use\_fck\_nat\_ami is false | `string` | `null` | no |
-| <a name="input_custom_ami_owner"></a> [custom\_ami\_owner](#input\_custom\_ami\_owner) | AMI owner account ID when use\_fck\_nat\_ami is false | `string` | `null` | no |
+| <a name="input_custom_ami_name_pattern"></a> [custom\_ami\_name\_pattern](#input\_custom\_ami\_name\_pattern) | AMI name pattern for custom AMI lookup | `string` | `null` | no |
+| <a name="input_custom_ami_owner"></a> [custom\_ami\_owner](#input\_custom\_ami\_owner) | AMI owner account ID for custom AMI lookup | `string` | `null` | no |
 | <a name="input_enable_logging"></a> [enable\_logging](#input\_enable\_logging) | Create a CloudWatch log group for the Lambda function | `bool` | `true` | no |
 | <a name="input_encrypt_root_volume"></a> [encrypt\_root\_volume](#input\_encrypt\_root\_volume) | Encrypt the root EBS volume. | `bool` | `true` | no |
+| <a name="input_first_party_ami_name_pattern"></a> [first\_party\_ami\_name\_pattern](#input\_first\_party\_ami\_name\_pattern) | AMI name pattern for first-party AMI lookup. | `string` | `"nat-zero-al2023-minimal-arm64-20260304-054741"` | no |
+| <a name="input_first_party_ami_owner"></a> [first\_party\_ami\_owner](#input\_first\_party\_ami\_owner) | AMI owner account for first-party AMI lookup. | `string` | `"self"` | no |
 | <a name="input_ignore_tag_key"></a> [ignore\_tag\_key](#input\_ignore\_tag\_key) | Tag key used to mark instances the Lambda should ignore | `string` | `"nat-zero:ignore"` | no |
 | <a name="input_ignore_tag_value"></a> [ignore\_tag\_value](#input\_ignore\_tag\_value) | Tag value used to mark instances the Lambda should ignore | `string` | `"true"` | no |
 | <a name="input_instance_type"></a> [instance\_type](#input\_instance\_type) | Instance type for the NAT instance | `string` | `"t4g.nano"` | no |
@@ -72,7 +74,8 @@ No modules.
 | <a name="input_private_subnets_cidr_blocks"></a> [private\_subnets\_cidr\_blocks](#input\_private\_subnets\_cidr\_blocks) | CIDR blocks for the private subnets (one per AZ, used in security group rules) | `list(string)` | n/a | yes |
 | <a name="input_public_subnets"></a> [public\_subnets](#input\_public\_subnets) | Public subnet IDs (one per AZ) for NAT instance public ENIs | `list(string)` | n/a | yes |
 | <a name="input_tags"></a> [tags](#input\_tags) | Additional tags to apply to all resources | `map(string)` | `{}` | no |
-| <a name="input_use_fck_nat_ami"></a> [use\_fck\_nat\_ami](#input\_use\_fck\_nat\_ami) | Use the public fck-nat AMI. Set to false to use a custom AMI. | `bool` | `true` | no |
+| <a name="input_use_fck_nat_ami"></a> [use\_fck\_nat\_ami](#input\_use\_fck\_nat\_ami) | DEPRECATED: fck-nat AMIs are unsupported. Leave false. | `bool` | `false` | no |
+| <a name="input_use_first_party_ami"></a> [use\_first\_party\_ami](#input\_use\_first\_party\_ami) | Use nat-zero first-party AMI lookup (arm64, AL2023 minimal). Enabled by default. | `bool` | `true` | no |
 | <a name="input_vpc_id"></a> [vpc\_id](#input\_vpc\_id) | The VPC ID where NAT instances will be deployed | `string` | n/a | yes |
 
 ## Outputs

@@ -154,6 +154,19 @@ Each NAT instance uses two ENIs to separate public and private traffic:
 - **source_dest_check=false**: Required on both ENIs for NAT forwarding
 - **EIP lifecycle**: Allocated on NAT running, released on NAT stopped — no charge when idle
 
+### First-Party AMI Path
+
+nat-zero now includes a first-party AMI build path (`ami/first-party/`) for the dual-ENI model. This exists because we observed reliability issues with fck-nat in this specific setup: boot-time interface resolution races could leave NAT configuration incomplete or incorrect.
+
+The first-party image intentionally keeps runtime logic minimal and deterministic:
+
+- fixed interface expectations (`ens5` public, `ens6` private)
+- no IMDS calls in NAT bootstrap/runtime scripts
+- no `aws` CLI calls in NAT bootstrap/runtime scripts
+- no runtime ENI/EIP orchestration in the AMI
+
+Control-plane lifecycle (instance/EIP orchestration) remains in the nat-zero Lambda reconciler.
+
 ## Config Versioning
 
 The Lambda tags each NAT instance with a `ConfigVersion` hash derived from AMI, instance type, market type, volume size, and encryption setting.

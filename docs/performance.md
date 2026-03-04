@@ -20,7 +20,7 @@ All measurements from real integration tests in us-east-1 with `t4g.nano` instan
  2.3 s   RunInstances returns — NAT is "pending"
          Lambda returns.
 
-~8.0 s   NAT reaches "running" (EC2 boot + fck-nat config)
+~8.0 s   NAT reaches "running" (EC2 boot + NAT bootstrap config)
 ~8.3 s   EventBridge delivers NAT "running" event
 ~8.9 s   Lambda: allocate EIP + associate (~3 s)
 

@@ -323,6 +323,10 @@ func (h *Handler) isCurrentConfig(inst *Instance) bool {
 
 func (h *Handler) resolveAMI(ctx context.Context) string {
 	defer timed("resolve_ami")()
+	if h.AMIOwner == "" || h.AMIPattern == "" {
+		return ""
+	}
+
 	resp, err := h.EC2.DescribeImages(ctx, &ec2.DescribeImagesInput{
 		Owners: []string{h.AMIOwner},
 		Filters: []ec2types.Filter{
@@ -383,7 +387,12 @@ func (h *Handler) createNAT(ctx context.Context, az, vpc string) string {
 		return ""
 	}
 
-	amiID := h.resolveAMI(ctx)
+	amiID := h.AMIOverride
+	if amiID != "" {
+		log.Printf("Using explicit AMI override %s", amiID)
+	} else {
+		amiID = h.resolveAMI(ctx)
+	}
 
 	input := &ec2.RunInstancesInput{
 		LaunchTemplate: &ec2types.LaunchTemplateSpecification{

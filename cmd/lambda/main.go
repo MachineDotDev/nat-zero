@@ -29,8 +29,9 @@ func main() {
 		IgnoreTagKey:   envOr("IGNORE_TAG_KEY", "nat-zero:ignore"),
 		IgnoreTagValue: envOr("IGNORE_TAG_VALUE", "true"),
 		TargetVPC:      os.Getenv("TARGET_VPC_ID"),
-		AMIOwner:       envOr("AMI_OWNER_ACCOUNT", "568608671756"),
-		AMIPattern:     envOr("AMI_NAME_PATTERN", "fck-nat-al2023-*-arm64-*"),
+		AMIOwner:       envOr("AMI_OWNER_ACCOUNT", "self"),
+		AMIPattern:     envOr("AMI_NAME_PATTERN", "nat-zero-al2023-minimal-arm64-20260304-054741"),
+		AMIOverride:    os.Getenv("AMI_ID_OVERRIDE"),
 		ConfigVersion:  os.Getenv("CONFIG_VERSION"),
 	}
 

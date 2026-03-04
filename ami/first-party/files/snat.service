@@ -1,0 +1,12 @@
+[Unit]
+Description=Configure deterministic IPv4 SNAT for NAT instance
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+ExecStart=/opt/nat/snat.sh
+Type=oneshot
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

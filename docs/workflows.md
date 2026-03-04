@@ -10,6 +10,8 @@ Internal reference for GitHub Actions workflows, repo rulesets, and the release 
 | Go Tests | `go-tests.yml` | PRs touching `cmd/lambda/**`; push to `main` | `go-test` |
 | Integration Tests | `integration-tests.yml` | PR labeled `integration-test`; manual dispatch | `integration-test` |
 | Docs | `docs.yml` | Push to `main` (filtered paths) | No (post-merge deploy) |
+| AMI Copy | `ami-copy-enabled-regions.yml` | Manual dispatch | No |
+| AMI Promote | `ami-promote-release.yml` | Manual dispatch | No |
 | Release | `release-please.yml` | Push to `main`; manual dispatch | No (post-merge) |
 
 ## Pre-commit (`precommit.yml`)
@@ -55,6 +57,33 @@ Deploys MkDocs Material to GitHub Pages.
 - **Trigger**: Push to `main` only, when `docs/**`, `mkdocs.yml`, `README.md`, or `*.tf` change.
 - **Not a merge gate** -- only runs post-merge.
 - Runs `mkdocs gh-deploy --force`.
+
+## AMI Copy (`ami-copy-enabled-regions.yml`)
+
+Copies a source AMI to all currently enabled account regions.
+
+- **Trigger**: `workflow_dispatch`.
+- **Environment**: `release` (`AMI_PUBLISH_ROLE_ARN` secret for OIDC role assumption).
+- **Inputs**:
+  - `source_ami_id`
+  - `source_region`
+  - `wait_for_available`
+  - `dry_run`
+- **Implementation**: runs `ami/first-party/scripts/copy-to-enabled-regions.sh`.
+
+## AMI Promote (`ami-promote-release.yml`)
+
+Pins the module's default first-party AMI name and opens a conventional-commit PR so release-please can publish a new module release.
+
+- **Trigger**: `workflow_dispatch`.
+- **Environment**: `release` (`AMI_PUBLISH_ROLE_ARN` secret for OIDC role assumption).
+- **Inputs**:
+  - `source_ami_id`
+  - `source_region`
+- **Behavior**:
+  - runs `ami/first-party/scripts/promote-default-ami.sh`
+  - refreshes terraform-docs output in `README.md` and `docs/reference.md`
+  - creates PR titled `feat(ami): promote first-party AMI <name>`
 
 ## Release Please (`release-please.yml`)
 
