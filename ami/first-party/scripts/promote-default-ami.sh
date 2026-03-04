@@ -133,23 +133,6 @@ END {
 }
 '
 
-update_file "$ROOT_DIR/cmd/lambda/main.go" '
-BEGIN { updated = 0 }
-{
-  if ($0 ~ /AMIPattern:[[:space:]]+envOr\("AMI_NAME_PATTERN",/) {
-    sub(/envOr\("AMI_NAME_PATTERN", "[^"]*"\)/, "envOr(\"AMI_NAME_PATTERN\", \"" ami_name "\")")
-    updated = 1
-  }
-  print
-}
-END {
-  if (!updated) {
-    print "Failed to update AMI_NAME_PATTERN fallback in cmd/lambda/main.go" > "/dev/stderr"
-    exit 1
-  }
-}
-'
-
 update_file "$ROOT_DIR/README.md" '
 BEGIN { updated = 0 }
 {

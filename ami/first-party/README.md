@@ -60,7 +60,6 @@ After integration validation and region copies are complete, promote the AMI nam
 This updates:
 
 - `variables.tf` (`first_party_ami_name_pattern` default)
-- `cmd/lambda/main.go` fallback for standalone Lambda runs
 - user-facing AMI example snippets in docs
 
 ## GitHub Workflows
