@@ -5,6 +5,10 @@ locals {
     },
     var.tags,
   )
+
+  # Bump when bootstrap guard behavior changes so existing NAT instances
+  # are replaced via the existing ConfigVersion reconciliation.
+  fck_nat_bootstrap_guard_version = "fck-nat-bootstrap-guard-v1"
 }
 
 resource "aws_launch_template" "nat_launch_template" {
@@ -44,6 +48,8 @@ resource "aws_launch_template" "nat_launch_template" {
     http_endpoint = "enabled"
     http_tokens   = "required"
   }
+
+  user_data = base64encode(file("${path.module}/files/nat_bootstrap_guard_user_data.sh"))
 
   network_interfaces {
     network_interface_id  = aws_network_interface.nat_public_network_interface[count.index].id

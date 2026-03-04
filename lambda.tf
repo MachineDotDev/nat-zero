@@ -81,6 +81,7 @@ resource "aws_lambda_function" "nat_zero" {
         var.market_type,
         tostring(var.block_device_size),
         tostring(var.encrypt_root_volume),
+        local.fck_nat_bootstrap_guard_version,
       ]))
     }
   }

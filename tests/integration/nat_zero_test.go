@@ -130,6 +130,7 @@ func TestNatZero(t *testing.T) {
 	lambdaName := terraform.Output(t, opts, "lambda_function_name")
 	encryptRootVolume = terraform.Output(t, opts, "encrypt_root_volume")
 	t.Logf("VPC: %s, private subnet: %s, Lambda: %s", vpcID, privateSubnet, lambdaName)
+	assertLaunchTemplateBootstrapGuard(t, ec2Client, vpcID)
 
 	// Terminate test workload instances before terraform destroy.
 	defer func() {
@@ -716,6 +717,40 @@ func waitForEgress(t *testing.T, client *sqs.SQS, queueURL string, timeout time.
 	}
 	t.Fatalf("timed out waiting for egress message on SQS queue %s", queueURL)
 	return egressMessage{} // unreachable
+}
+
+func assertLaunchTemplateBootstrapGuard(t *testing.T, c *ec2.EC2, vpcID string) {
+	t.Helper()
+
+	templates, err := c.DescribeLaunchTemplates(&ec2.DescribeLaunchTemplatesInput{
+		Filters: []*ec2.Filter{
+			{Name: aws.String("tag:VpcId"), Values: []*string{aws.String(vpcID)}},
+		},
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, templates.LaunchTemplates, "expected launch template tagged with VpcId=%s", vpcID)
+
+	for _, lt := range templates.LaunchTemplates {
+		versions, err := c.DescribeLaunchTemplateVersions(&ec2.DescribeLaunchTemplateVersionsInput{
+			LaunchTemplateId: lt.LaunchTemplateId,
+			Versions:         []*string{aws.String("$Latest")},
+		})
+		require.NoError(t, err)
+		require.Len(t, versions.LaunchTemplateVersions, 1)
+
+		data := versions.LaunchTemplateVersions[0].LaunchTemplateData
+		require.NotNil(t, data)
+
+		encodedUserData := aws.StringValue(data.UserData)
+		require.NotEmpty(t, encodedUserData, "launch template %s missing user_data", aws.StringValue(lt.LaunchTemplateId))
+
+		decodedUserData, err := base64.StdEncoding.DecodeString(encodedUserData)
+		require.NoError(t, err)
+
+		script := string(decodedUserData)
+		assert.Contains(t, script, "nat-zero-fck-nat-guard.sh")
+		assert.Contains(t, script, "nat-zero-fck-nat-guard.service")
+	}
 }
 
 func assertRouteTableEntry(t *testing.T, c *ec2.EC2, vpcID string, nat *ec2.Instance) {
