@@ -56,9 +56,9 @@ The test uses [Terratest](https://terratest.gruntwork.io/) with a single `terraf
 Integration tests run in GitHub Actions when the `integration-test` label is added to a PR. They use OIDC to assume an AWS role in a dedicated test account.
 
 - Concurrency: one test at a time (`cancel-in-progress: false`)
-- Timeout: 60 minutes
+- Timeout: 30 minutes
 - Region: us-east-1
-- CI workflow always builds a temporary replacement AMI in us-east-1 and runs AMI replacement coverage.
+- Replacement AMI source: integration environment secret `INTEGRATION_NAT_REPLACEMENT_AMI_ID` (private AMI in account `590144423513`)
 
 ## Orphan Detection
 
@@ -68,7 +68,7 @@ Integration tests run in GitHub Actions when the `integration-test` label is add
 
 The Lambda tags NAT instances with a `ConfigVersion` hash (AMI + instance type + market type + volume size + encryption). When the config changes and a workload triggers reconciliation, the Lambda terminates the outdated NAT and creates a replacement.
 
-The integration workflow always sets `NAT_AMI_REPLACEMENT_ID` using a temporary AMI built in us-east-1, then the test:
+The integration workflow always sets `NAT_AMI_REPLACEMENT_ID` from `INTEGRATION_NAT_REPLACEMENT_AMI_ID`, then the test:
 
 1. Runs `terraform apply` with `ami_id` set to the provided AMI
 2. Invokes Lambda reconciliation for the running workload
