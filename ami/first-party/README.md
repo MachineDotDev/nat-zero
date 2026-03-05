@@ -33,61 +33,20 @@ The AMI name format is:
 
 - `nat-zero-al2023-minimal-arm64-<timestamp>`
 
-This full AMI name is used as the module default for deterministic first-party rollout.
+This full AMI name is used as the module default target for deterministic first-party rollout.
 
-## Copy To Enabled Regions
+## GitHub Workflow
 
-After building in a source region, copy the AMI to all currently enabled regions:
-
-```bash
-./ami/first-party/scripts/copy-to-enabled-regions.sh \
-  --source-ami-id ami-0123456789abcdef0 \
-  --source-region us-east-1
-```
-
-Use `--wait` to block until all destination AMIs are available.
-
-## Promote As Module Default
-
-After integration validation and region copies are complete, promote the AMI name in module defaults:
-
-```bash
-./ami/first-party/scripts/promote-default-ami.sh \
-  --source-ami-id ami-0123456789abcdef0 \
-  --source-region us-east-1
-```
-
-This updates:
-
-- `variables.tf` (`first_party_ami_name_pattern` default)
-- user-facing AMI example snippets in docs
-
-## GitHub Workflows
-
-### Copy AMI To Enabled Regions
-
-Workflow: `.github/workflows/ami-copy-enabled-regions.yml`
+Workflow: `.github/workflows/nat-images.yml`
 
 - Requires GitHub environment secret `AMI_PUBLISH_ROLE_ARN`
 - Uses OIDC via `aws-actions/configure-aws-credentials`
 - Inputs:
-  - `source_ami_id`
-  - `source_region` (default `us-east-1`)
-  - `wait_for_available`
-  - `dry_run`
-
-### Promote AMI + Release PR
-
-Workflow: `.github/workflows/ami-promote-release.yml`
-
-- Requires GitHub environment secret `AMI_PUBLISH_ROLE_ARN`
-- Uses OIDC via `aws-actions/configure-aws-credentials`
-- Inputs:
-  - `source_ami_id`
+  - `build_subnet_id`
   - `source_region` (default `us-east-1`)
 - Behavior:
-  - pins module default AMI name to the provided AMI
-  - refreshes terraform-docs output
-  - creates a PR with conventional commit title: `feat(ami): ...`
+  - builds a new first-party AMI with Packer
+  - copies it to all currently enabled regions in the account
+  - updates `first_party_ami_name_pattern` (and generated docs) and opens a PR
 
-Merge that PR to `main` to let release-please publish a new module release that points to the promoted AMI name.
+Merge the promotion PR to `main` to let release-please publish a new module release that points to the promoted AMI name.

@@ -11,6 +11,19 @@ repos:
       - id: detect-private-key
       - id: detect-aws-credentials
         args: ["--allow-missing-credentials"]
+      - id: check-executables-have-shebangs
+      - id: check-shebang-scripts-are-executable
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+        files: '\.sh$'
+  - repo: https://github.com/scop/pre-commit-shfmt
+    rev: v3.12.0-2
+    hooks:
+      - id: shfmt
+        args: ["-i", "2", "-ci", "-sr", "-w"]
+        files: '\.sh$'
   - repo: https://github.com/TekWizely/pre-commit-golang
     rev: v1.0.0-rc.1
     hooks:
@@ -29,6 +42,24 @@ repos:
         entry: bash -c 'export PATH="$HOME/go/bin:$PATH" && cd cmd/lambda && staticcheck ./...'
         files: '\.go$'
         exclude: "tests/integration/"
+        pass_filenames: false
+      - id: packer-fmt
+        name: packer fmt
+        language: system
+        entry: bash -c 'cd ami/first-party && packer fmt -check nat-zero.pkr.hcl'
+        files: '^ami/first-party/.*\.pkr\.hcl$'
+        pass_filenames: false
+      - id: packer-validate-syntax
+        name: packer validate (syntax-only)
+        language: system
+        entry: bash -c 'cd ami/first-party && packer validate -syntax-only nat-zero.pkr.hcl'
+        files: '^ami/first-party/.*\.pkr\.hcl$'
+        pass_filenames: false
+      - id: nat-ami-bootstrap-constraints
+        name: nat AMI bootstrap constraints
+        language: system
+        entry: bash -c 'set -euo pipefail; if rg -n "(169\\.254\\.169\\.254|\\baws\\b)" ami/first-party/files/*.sh ami/first-party/scripts/*.sh; then echo "Found forbidden IMDS/aws-cli usage in AMI scripts." >&2; exit 1; fi'
+        files: '^ami/first-party/(files|scripts)/.*\.sh$'
         pass_filenames: false
   - repo: https://github.com/zricethezav/gitleaks
     rev: v8.16.4

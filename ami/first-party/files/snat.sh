@@ -4,22 +4,22 @@ set -eu
 NAT_PUBLIC_IFACE="${NAT_PUBLIC_IFACE:-ens5}"
 NAT_PRIVATE_IFACE="${NAT_PRIVATE_IFACE:-ens6}"
 
-if ! ip link show "$NAT_PUBLIC_IFACE" >/dev/null 2>&1; then
+if ! ip link show "$NAT_PUBLIC_IFACE" > /dev/null 2>&1; then
   echo "Missing expected public interface: $NAT_PUBLIC_IFACE" >&2
   exit 1
 fi
 
-if ! ip link show "$NAT_PRIVATE_IFACE" >/dev/null 2>&1; then
+if ! ip link show "$NAT_PRIVATE_IFACE" > /dev/null 2>&1; then
   echo "Missing expected private interface: $NAT_PRIVATE_IFACE" >&2
   exit 1
 fi
 
-cat >/etc/sysctl.d/99-nat.conf <<'EOF_SYSCTL'
+cat > /etc/sysctl.d/99-nat.conf << 'EOF_SYSCTL'
 net.ipv4.ip_forward = 1
 EOF_SYSCTL
-sysctl --system >/dev/null
+sysctl --system > /dev/null
 
-cat >/etc/sysconfig/iptables <<EOF_IPTABLES
+cat > /etc/sysconfig/iptables << EOF_IPTABLES
 *filter
 :INPUT DROP [0:0]
 :FORWARD DROP [0:0]
