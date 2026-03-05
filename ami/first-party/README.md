@@ -25,7 +25,6 @@ cd ami/first-party
 packer init nat-zero.pkr.hcl
 packer build \
   -var "region=us-east-1" \
-  -var 'ami_regions=["us-west-2","eu-west-1"]' \
   -var "subnet_id=subnet-0123456789abcdef0" \
   nat-zero.pkr.hcl
 ```
@@ -49,7 +48,7 @@ Workflow: `.github/workflows/nat-images.yml`
   - `run_integration_gate` (default `true`)
 - Behavior:
   - builds a new first-party AMI with Packer
-  - uses native Packer `ami_regions` to copy to all currently enabled regions in the account
+  - copies it to all currently enabled regions in the account (parallel copy with retries)
   - runs integration tests against the new source AMI (gate) before promotion
   - updates `first_party_ami_name_pattern` (and generated docs) and opens a PR
 

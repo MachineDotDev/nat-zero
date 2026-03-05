@@ -52,7 +52,6 @@ jobs:
     outputs:
       source_ami_id: ${{ steps.build.outputs.source_ami_id }}
       ami_name: ${{ steps.build.outputs.ami_name }}
-      copied_table: ${{ steps.build.outputs.copied_table }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -63,7 +62,7 @@ jobs:
 
       - uses: hashicorp/setup-packer@main
 
-      - name: Build first-party AMI and copy with native Packer ami_regions
+      - name: Build first-party AMI
         id: build
         working-directory: ami/first-party
         run: |
@@ -71,25 +70,10 @@ jobs:
 
           source_region="${{ inputs.source_region }}"
 
-          mapfile -t enabled_regions < <(
-            aws account list-regions \
-              --region-opt-status-contains ENABLED ENABLED_BY_DEFAULT \
-              --query 'Regions[].RegionName' \
-              --output text | tr '\t' '\n' | sed '/^$/d' | sort
-          )
-
-          if [[ "${#enabled_regions[@]}" -eq 0 ]]; then
-            echo "No enabled regions returned by account:list-regions" >&2
-            exit 1
-          fi
-
-          ami_regions_json="$(printf '%s\n' "${enabled_regions[@]}" | jq -Rsc --arg src "$source_region" 'split("\n")[:-1] | map(select(length > 0 and . != $src))')"
-
           packer init nat-zero.pkr.hcl
           packer build -machine-readable \
             -var "region=${source_region}" \
             -var "subnet_id=${{ inputs.build_subnet_id }}" \
-            -var "ami_regions=${ami_regions_json}" \
             nat-zero.pkr.hcl | tee /tmp/packer.log
 
           artifact="$(awk -F',' '$3 == "artifact" && $4 == "0" && $5 == "id" { print $6 }' /tmp/packer.log | tail -1)"
@@ -98,17 +82,9 @@ jobs:
             exit 1
           fi
 
-          artifact="${artifact//%!(PACKER_COMMA)/,}"
-
-          mapfile -t copied_pairs < <(printf '%s\n' "$artifact" | tr ',' '\n' | sed '/^$/d')
-          if [[ "${#copied_pairs[@]}" -eq 0 ]]; then
-            echo "Failed to parse AMI copy results from artifact: $artifact" >&2
-            exit 1
-          fi
-
-          source_ami_id="$(printf '%s\n' "${copied_pairs[@]}" | sed -n "s/^${source_region}://p" | head -1)"
+          source_ami_id="${artifact##*:}"
           if [[ -z "$source_ami_id" ]]; then
-            echo "Failed to parse source AMI ID for region ${source_region} from artifact: $artifact" >&2
+            echo "Failed to parse source AMI ID from artifact: $artifact" >&2
             exit 1
           fi
 
@@ -128,16 +104,8 @@ jobs:
             exit 1
           fi
 
-          copied_table="$(printf '%s\n' "${copied_pairs[@]}" | sort)"
-
           echo "source_ami_id=$source_ami_id" >> "$GITHUB_OUTPUT"
           echo "ami_name=$ami_name" >> "$GITHUB_OUTPUT"
-          {
-            echo 'copied_table<<EOF'
-            echo "$copied_table"
-            echo 'EOF'
-          } >> "$GITHUB_OUTPUT"
-
           echo "Built source AMI: $source_ami_id ($ami_name)"
 
   integration_gate:
@@ -190,12 +158,148 @@ jobs:
     needs: [build_ami, integration_gate]
     if: ${{ needs.build_ami.result == 'success' && (needs.integration_gate.result == 'success' || needs.integration_gate.result == 'skipped') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 120
+    environment: release
     permissions:
+      id-token: write
       contents: write
       pull-requests: write
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ inputs.role_to_assume || secrets.AMI_BUILD_ROLE_ARN }}
+          aws-region: ${{ inputs.source_region }}
+
+      - name: Copy source AMI to enabled regions (parallel with retries)
+        id: copy
+        run: |
+          set -euo pipefail
+
+          source_region="${{ inputs.source_region }}"
+          source_ami_id="${{ needs.build_ami.outputs.source_ami_id }}"
+          ami_name="${{ needs.build_ami.outputs.ami_name }}"
+          max_parallel=8
+          max_attempts=20
+
+          mapfile -t regions < <(
+            aws account list-regions \
+              --region-opt-status-contains ENABLED ENABLED_BY_DEFAULT \
+              --query 'Regions[].RegionName' \
+              --output text | tr '\t' '\n' | sed '/^$/d' | sort
+          )
+
+          if [[ "${#regions[@]}" -eq 0 ]]; then
+            echo "No enabled regions returned by account:list-regions" >&2
+            exit 1
+          fi
+
+          tmp_dir="$(mktemp -d)"
+          trap 'rm -rf "${tmp_dir}"' EXIT
+
+          copy_with_retry() {
+            local region="$1"
+            local attempt=1
+            local ami_id=""
+            local existing_id=""
+
+            while (( attempt <= max_attempts )); do
+              existing_id="$(aws ec2 describe-images \
+                --region "$region" \
+                --owners self \
+                --filters \
+                  "Name=source-image-id,Values=${source_ami_id}" \
+                  "Name=name,Values=${ami_name}" \
+                  "Name=state,Values=pending,available" \
+                --query 'reverse(sort_by(Images,&CreationDate))[0].ImageId' \
+                --output text 2>/dev/null || true)"
+
+              if [[ -n "$existing_id" && "$existing_id" != "None" ]]; then
+                ami_id="$existing_id"
+                echo "[$region] attempt ${attempt}: reusing existing copy $ami_id"
+              else
+                ami_id="$(aws ec2 copy-image \
+                  --region "$region" \
+                  --source-region "$source_region" \
+                  --source-image-id "$source_ami_id" \
+                  --name "$ami_name" \
+                  --description "Copy of ${source_ami_id} from ${source_region}" \
+                  --copy-image-tags \
+                  --query 'ImageId' \
+                  --output text)"
+                echo "[$region] attempt ${attempt}: started copy $ami_id"
+              fi
+
+              if aws ec2 wait image-available --region "$region" --image-ids "$ami_id"; then
+                echo "[$region] available: $ami_id"
+                printf '%s:%s\n' "$region" "$ami_id" > "${tmp_dir}/result-${region}"
+                return 0
+              fi
+
+              echo "[$region] attempt ${attempt} failed; retrying..."
+              sleep $((attempt * 6))
+              attempt=$((attempt + 1))
+            done
+
+            echo "[$region] failed after ${max_attempts} attempts" >&2
+            return 1
+          }
+
+          declare -a pids=()
+          declare -a copy_regions=()
+
+          for region in "${regions[@]}"; do
+            if [[ "$region" == "$source_region" ]]; then
+              continue
+            fi
+
+            while (( $(jobs -pr | wc -l) >= max_parallel )); do
+              sleep 2
+            done
+
+            copy_regions+=("$region")
+            (
+              set -euo pipefail
+              copy_with_retry "$region"
+            ) >"${tmp_dir}/log-${region}" 2>&1 &
+            pids+=("$!")
+          done
+
+          failed=0
+          for i in "${!pids[@]}"; do
+            region="${copy_regions[$i]}"
+            if ! wait "${pids[$i]}"; then
+              failed=1
+              echo "[${region}] copy failed" >&2
+            fi
+            cat "${tmp_dir}/log-${region}" || true
+          done
+
+          if (( failed )); then
+            echo "One or more region copies failed" >&2
+            exit 1
+          fi
+
+          copied_table="${source_region}:${source_ami_id}"
+          for region in "${regions[@]}"; do
+            if [[ "$region" == "$source_region" ]]; then
+              continue
+            fi
+
+            if [[ ! -s "${tmp_dir}/result-${region}" ]]; then
+              echo "Missing copy result for region: $region" >&2
+              exit 1
+            fi
+
+            copied_table+=$'\n'"$(cat "${tmp_dir}/result-${region}")"
+          done
+
+          {
+            echo 'copied_table<<EOF'
+            echo "$copied_table"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
 
       - name: Pin module default AMI and refresh docs
         run: |
@@ -250,9 +354,9 @@ jobs:
           - Source region: \`${{ inputs.source_region }}\`
           - AMI name: \`${ami_name}\`
 
-          AMIs produced by Packer:
+          Copied AMIs:
           \`\`\`
-          ${{ needs.build_ami.outputs.copied_table }}
+          ${{ steps.copy.outputs.copied_table }}
           \`\`\`
           EOF
 
