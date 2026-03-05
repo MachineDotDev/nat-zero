@@ -16,8 +16,10 @@ permissions:
 jobs:
   integration-test:
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      github.event.label.name == 'integration-test'
+      (github.event_name == 'pull_request' &&
+      github.event.label.name == 'integration-test') ||
+      (github.event_name == 'workflow_dispatch' &&
+      github.ref_name != 'feat/first-party-ami-release-flow')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: integration
@@ -59,3 +61,17 @@ jobs:
         env:
           NAT_AMI_REPLACEMENT_ID: ${{ secrets.INTEGRATION_NAT_REPLACEMENT_AMI_ID }}
         run: go test -v -timeout 25m -count=1
+
+  nat-images-compat:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref_name == 'feat/first-party-ami-release-flow'
+    permissions:
+      id-token: write
+      contents: write
+      pull-requests: write
+    uses: ./.github/workflows/nat-images.yml
+    with:
+      source_region: us-east-1
+      build_subnet_id: subnet-01dac7507404202b2
+    secrets: inherit

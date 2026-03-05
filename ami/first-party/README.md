@@ -39,7 +39,7 @@ This full AMI name is used as the module default target for deterministic first-
 
 Workflow: `.github/workflows/nat-images.yml`
 
-- Requires GitHub environment secret `AMI_PUBLISH_ROLE_ARN`
+- Requires GitHub environment secret `AMI_BUILD_ROLE_ARN`
 - Uses OIDC via `aws-actions/configure-aws-credentials`
 - Inputs:
   - `build_subnet_id`

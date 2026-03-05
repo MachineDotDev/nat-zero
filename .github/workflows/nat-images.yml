@@ -12,6 +12,22 @@ on:
         description: Public subnet ID used for the Packer builder instance
         required: true
         type: string
+      role_to_assume:
+        description: Optional AWS role ARN override
+        required: false
+        default: ""
+        type: string
+  workflow_call:
+    inputs:
+      source_region:
+        required: true
+        type: string
+      build_subnet_id:
+        required: true
+        type: string
+      role_to_assume:
+        required: false
+        type: string
 
 permissions:
   id-token: write
@@ -28,7 +44,7 @@ jobs:
 
       - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
-          role-to-assume: ${{ secrets.AMI_PUBLISH_ROLE_ARN }}
+          role-to-assume: ${{ inputs.role_to_assume || secrets.AMI_BUILD_ROLE_ARN }}
           aws-region: ${{ inputs.source_region }}
 
       - uses: hashicorp/setup-packer@main
