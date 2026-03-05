@@ -140,6 +140,25 @@ jobs:
           role-to-assume: ${{ secrets.INTEGRATION_ROLE_ARN }}
           aws-region: us-east-1
 
+      - name: Validate baseline and replacement AMIs for integration gate
+        env:
+          BASELINE_AMI_ID: ${{ secrets.INTEGRATION_NAT_REPLACEMENT_AMI_ID }}
+          REPLACEMENT_AMI_ID: ${{ needs.build_ami.outputs.source_ami_id }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$BASELINE_AMI_ID" ]]; then
+            echo "Missing required secret: INTEGRATION_NAT_REPLACEMENT_AMI_ID" >&2
+            exit 1
+          fi
+          if [[ -z "$REPLACEMENT_AMI_ID" ]]; then
+            echo "Missing built source AMI ID from build_ami job output" >&2
+            exit 1
+          fi
+          if [[ "$BASELINE_AMI_ID" == "$REPLACEMENT_AMI_ID" ]]; then
+            echo "Baseline AMI and replacement AMI are identical; replacement test cannot run" >&2
+            exit 1
+          fi
+
       - name: Build Lambda binary
         working-directory: cmd/lambda
         run: |
@@ -151,6 +170,7 @@ jobs:
       - name: Run integration tests against built AMI
         working-directory: tests/integration
         env:
+          TF_VAR_nat_ami_id: ${{ secrets.INTEGRATION_NAT_REPLACEMENT_AMI_ID }}
           NAT_AMI_REPLACEMENT_ID: ${{ needs.build_ami.outputs.source_ami_id }}
         run: go test -v -timeout 25m -count=1
 
