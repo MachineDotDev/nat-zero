@@ -58,7 +58,7 @@ No modules.
 | <a name="input_custom_ami_owner"></a> [custom\_ami\_owner](#input\_custom\_ami\_owner) | AMI owner account ID for custom AMI lookup | `string` | `null` | no |
 | <a name="input_enable_logging"></a> [enable\_logging](#input\_enable\_logging) | Create a CloudWatch log group for the Lambda function | `bool` | `true` | no |
 | <a name="input_encrypt_root_volume"></a> [encrypt\_root\_volume](#input\_encrypt\_root\_volume) | Encrypt the root EBS volume. | `bool` | `true` | no |
-| <a name="input_first_party_ami_name_pattern"></a> [first\_party\_ami\_name\_pattern](#input\_first\_party\_ami\_name\_pattern) | AMI name pattern for first-party AMI lookup. | `string` | `"nat-zero-al2023-minimal-arm64-20260304-054741"` | no |
+| <a name="input_first_party_ami_name_pattern"></a> [first\_party\_ami\_name\_pattern](#input\_first\_party\_ami\_name\_pattern) | AMI name pattern for first-party AMI lookup. | `string` | `"nat-zero-al2023-minimal-arm64-20260305-135430"` | no |
 | <a name="input_first_party_ami_owner"></a> [first\_party\_ami\_owner](#input\_first\_party\_ami\_owner) | AMI owner account for first-party AMI lookup. | `string` | `"self"` | no |
 | <a name="input_ignore_tag_key"></a> [ignore\_tag\_key](#input\_ignore\_tag\_key) | Tag key used to mark instances the Lambda should ignore | `string` | `"nat-zero:ignore"` | no |
 | <a name="input_ignore_tag_value"></a> [ignore\_tag\_value](#input\_ignore\_tag\_value) | Tag value used to mark instances the Lambda should ignore | `string` | `"true"` | no |

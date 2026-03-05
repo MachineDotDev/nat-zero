@@ -116,7 +116,7 @@ variable "first_party_ami_owner" {
 
 variable "first_party_ami_name_pattern" {
   type        = string
-  default     = "nat-zero-al2023-minimal-arm64-20260304-054741"
+  default     = "nat-zero-al2023-minimal-arm64-20260305-135430"
   description = "AMI name pattern for first-party AMI lookup."
 
   validation {
