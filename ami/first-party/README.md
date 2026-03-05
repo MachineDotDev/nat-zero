@@ -25,6 +25,7 @@ cd ami/first-party
 packer init nat-zero.pkr.hcl
 packer build \
   -var "region=us-east-1" \
+  -var 'ami_regions=["us-west-2","eu-west-1"]' \
   -var "subnet_id=subnet-0123456789abcdef0" \
   nat-zero.pkr.hcl
 ```
@@ -40,13 +41,16 @@ This full AMI name is used as the module default target for deterministic first-
 Workflow: `.github/workflows/nat-images.yml`
 
 - Requires GitHub environment secret `AMI_BUILD_ROLE_ARN`
+- Requires GitHub environment secret `INTEGRATION_ROLE_ARN` when `run_integration_gate=true`
 - Uses OIDC via `aws-actions/configure-aws-credentials`
 - Inputs:
   - `build_subnet_id`
   - `source_region` (default `us-east-1`)
+  - `run_integration_gate` (default `true`)
 - Behavior:
   - builds a new first-party AMI with Packer
-  - copies it to all currently enabled regions in the account
+  - uses native Packer `ami_regions` to copy to all currently enabled regions in the account
+  - runs integration tests against the new source AMI (gate) before promotion
   - updates `first_party_ami_name_pattern` (and generated docs) and opens a PR
 
 Merge the promotion PR to `main` to let release-please publish a new module release that points to the promoted AMI name.

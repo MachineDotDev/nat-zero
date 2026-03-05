@@ -17,28 +17,28 @@ on:
         required: false
         default: ""
         type: string
-  workflow_call:
-    inputs:
-      source_region:
+      run_integration_gate:
+        description: Run integration tests against the newly built AMI before publish
         required: true
-        type: string
-      build_subnet_id:
-        required: true
-        type: string
-      role_to_assume:
-        required: false
-        type: string
+        default: true
+        type: boolean
 
-permissions:
-  id-token: write
-  contents: write
-  pull-requests: write
+concurrency:
+  group: nat-zero-ami-release
+  cancel-in-progress: false
 
 jobs:
-  release_ami:
+  build_ami:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 90
     environment: release
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      source_ami_id: ${{ steps.build.outputs.source_ami_id }}
+      ami_name: ${{ steps.build.outputs.ami_name }}
+      copied_table: ${{ steps.build.outputs.copied_table }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -49,16 +49,33 @@ jobs:
 
       - uses: hashicorp/setup-packer@main
 
-      - name: Build first-party AMI
+      - name: Build first-party AMI and copy with native Packer ami_regions
         id: build
         working-directory: ami/first-party
         run: |
           set -euo pipefail
 
+          source_region="${{ inputs.source_region }}"
+
+          mapfile -t enabled_regions < <(
+            aws account list-regions \
+              --region-opt-status-contains ENABLED ENABLED_BY_DEFAULT \
+              --query 'Regions[].RegionName' \
+              --output text | tr '\t' '\n' | sed '/^$/d' | sort
+          )
+
+          if [[ "${#enabled_regions[@]}" -eq 0 ]]; then
+            echo "No enabled regions returned by account:list-regions" >&2
+            exit 1
+          fi
+
+          ami_regions_json="$(printf '%s\n' "${enabled_regions[@]}" | jq -Rsc --arg src "$source_region" 'split("\n")[:-1] | map(select(length > 0 and . != $src))')"
+
           packer init nat-zero.pkr.hcl
           packer build -machine-readable \
-            -var "region=${{ inputs.source_region }}" \
+            -var "region=${source_region}" \
             -var "subnet_id=${{ inputs.build_subnet_id }}" \
+            -var "ami_regions=${ami_regions_json}" \
             nat-zero.pkr.hcl | tee /tmp/packer.log
 
           artifact="$(awk -F',' '$3 == "artifact" && $4 == "0" && $5 == "id" { print $6 }' /tmp/packer.log | tail -1)"
@@ -67,14 +84,22 @@ jobs:
             exit 1
           fi
 
-          source_ami_id="${artifact##*:}"
+          artifact="${artifact//%!(PACKER_COMMA)/,}"
+
+          mapfile -t copied_pairs < <(printf '%s\n' "$artifact" | tr ',' '\n' | sed '/^$/d')
+          if [[ "${#copied_pairs[@]}" -eq 0 ]]; then
+            echo "Failed to parse AMI copy results from artifact: $artifact" >&2
+            exit 1
+          fi
+
+          source_ami_id="$(printf '%s\n' "${copied_pairs[@]}" | sed -n "s/^${source_region}://p" | head -1)"
           if [[ -z "$source_ami_id" ]]; then
-            echo "Failed to parse source AMI ID from artifact: $artifact" >&2
+            echo "Failed to parse source AMI ID for region ${source_region} from artifact: $artifact" >&2
             exit 1
           fi
 
           ami_name="$(aws ec2 describe-images \
-            --region "${{ inputs.source_region }}" \
+            --region "$source_region" \
             --image-ids "$source_ami_id" \
             --query 'Images[0].Name' \
             --output text)"
@@ -89,77 +114,78 @@ jobs:
             exit 1
           fi
 
+          copied_table="$(printf '%s\n' "${copied_pairs[@]}" | sort)"
+
           echo "source_ami_id=$source_ami_id" >> "$GITHUB_OUTPUT"
           echo "ami_name=$ami_name" >> "$GITHUB_OUTPUT"
-          echo "Built source AMI: $source_ami_id ($ami_name)"
-
-      - name: Copy AMI to enabled regions
-        id: copy
-        run: |
-          source_region="${{ inputs.source_region }}"
-          source_ami_id="${{ steps.build.outputs.source_ami_id }}"
-          ami_name="${{ steps.build.outputs.ami_name }}"
-
-          mapfile -t regions < <(
-            aws account list-regions \
-              --region-opt-status-contains ENABLED ENABLED_BY_DEFAULT \
-              --query 'Regions[].RegionName' \
-              --output text | tr '\t' '\n' | sed '/^$/d' | sort
-          )
-
-          if [[ "${#regions[@]}" -eq 0 ]]; then
-            echo "No enabled regions returned by account:list-regions" >&2
-            exit 1
-          fi
-
-          copied_table="${source_region}:${source_ami_id}"
-
-          for region in "${regions[@]}"; do
-            if [[ "$region" == "$source_region" ]]; then
-              continue
-            fi
-
-            existing_id="$(aws ec2 describe-images \
-              --region "$region" \
-              --owners self \
-              --filters \
-                "Name=source-image-id,Values=${source_ami_id}" \
-                "Name=name,Values=${ami_name}" \
-              --query 'Images[0].ImageId' \
-              --output text 2>/dev/null || true)"
-
-            if [[ -n "$existing_id" && "$existing_id" != "None" ]]; then
-              ami_id="$existing_id"
-              echo "[$region] already exists: $ami_id"
-            else
-              ami_id="$(aws ec2 copy-image \
-                --region "$region" \
-                --source-region "$source_region" \
-                --source-image-id "$source_ami_id" \
-                --name "$ami_name" \
-                --description "Copy of ${source_ami_id} from ${source_region}" \
-                --copy-image-tags \
-                --query 'ImageId' \
-                --output text)"
-
-              echo "[$region] copy started: $ami_id"
-            fi
-
-            aws ec2 wait image-available --region "$region" --image-ids "$ami_id"
-            echo "[$region] available: $ami_id"
-
-            copied_table+=$'\n'"${region}:${ami_id}"
-          done
-
           {
             echo 'copied_table<<EOF'
             echo "$copied_table"
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
 
+          echo "Built source AMI: $source_ami_id ($ami_name)"
+
+  integration_gate:
+    if: ${{ inputs.run_integration_gate }}
+    needs: build_ami
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: integration
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Validate source region for integration gate
+        run: |
+          if [[ "${{ inputs.source_region }}" != "us-east-1" ]]; then
+            echo "Integration gate currently requires source_region=us-east-1" >&2
+            exit 1
+          fi
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: tests/integration/go.mod
+
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_wrapper: false
+
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ secrets.INTEGRATION_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Build Lambda binary
+        working-directory: cmd/lambda
+        run: |
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -tags lambda.norpc -ldflags='-s -w' -o bootstrap
+          zip lambda.zip bootstrap
+          mkdir -p ../../.build
+          cp lambda.zip ../../.build/lambda.zip
+
+      - name: Run integration tests against built AMI
+        working-directory: tests/integration
+        env:
+          NAT_AMI_REPLACEMENT_ID: ${{ needs.build_ami.outputs.source_ami_id }}
+        run: go test -v -timeout 25m -count=1
+
+  promote_ami:
+    needs: [build_ami, integration_gate]
+    if: ${{ needs.build_ami.result == 'success' && (needs.integration_gate.result == 'success' || needs.integration_gate.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
       - name: Pin module default AMI and refresh docs
         run: |
-          ami_name="${{ steps.build.outputs.ami_name }}"
+          ami_name="${{ needs.build_ami.outputs.ami_name }}"
 
           awk -v ami_name="$ami_name" '
           BEGIN { in_block = 0; updated = 0 }
@@ -191,8 +217,8 @@ jobs:
             exit 0
           fi
 
-          ami_name="${{ steps.build.outputs.ami_name }}"
-          source_ami_id="${{ steps.build.outputs.source_ami_id }}"
+          ami_name="${{ needs.build_ami.outputs.ami_name }}"
+          source_ami_id="${{ needs.build_ami.outputs.source_ami_id }}"
           branch="automation/promote-first-party-ami-${{ github.run_id }}"
 
           git config user.name "github-actions[bot]"
@@ -210,9 +236,9 @@ jobs:
           - Source region: \`${{ inputs.source_region }}\`
           - AMI name: \`${ami_name}\`
 
-          Copied AMIs:
+          AMIs produced by Packer:
           \`\`\`
-          ${{ steps.copy.outputs.copied_table }}
+          ${{ needs.build_ami.outputs.copied_table }}
           \`\`\`
           EOF
 
