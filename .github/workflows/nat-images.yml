@@ -202,7 +202,7 @@ jobs:
           ami_name="${{ needs.build_ami.outputs.ami_name }}"
           max_parallel=8
           max_attempts=20
-          allow_auth_failure_regions=("me-central-1")
+          allow_non_blocking_regions=("me-central-1")
 
           mapfile -t regions < <(
             aws account list-regions \
@@ -221,14 +221,29 @@ jobs:
           skipped_file="${tmp_dir}/skipped-regions"
           : > "$skipped_file"
 
-          is_allowed_auth_failure_region() {
+          is_non_blocking_region() {
             local region="$1"
             local allowed
-            for allowed in "${allow_auth_failure_regions[@]}"; do
+            for allowed in "${allow_non_blocking_regions[@]}"; do
               if [[ "$region" == "$allowed" ]]; then
                 return 0
               fi
             done
+            return 1
+          }
+
+          should_skip_non_blocking_error() {
+            local region="$1"
+            local err_file="$2"
+
+            if ! is_non_blocking_region "$region"; then
+              return 1
+            fi
+
+            if grep -Eq "AuthFailure|InternalError" "$err_file"; then
+              return 0
+            fi
+
             return 1
           }
 
@@ -263,8 +278,8 @@ jobs:
                   --copy-image-tags \
                   --query 'ImageId' \
                   --output text 2>"$err_file")"; then
-                  if grep -q "AuthFailure" "$err_file" && is_allowed_auth_failure_region "$region"; then
-                    echo "[$region] auth failure; skipping by policy"
+                  if should_skip_non_blocking_error "$region" "$err_file"; then
+                    echo "[$region] non-blocking copy error; skipping by policy"
                     printf '%s\n' "$region" >> "$skipped_file"
                     return 0
                   fi
@@ -282,8 +297,8 @@ jobs:
                 return 0
               fi
 
-              if grep -q "AuthFailure" "$err_file" && is_allowed_auth_failure_region "$region"; then
-                echo "[$region] auth failure while waiting for AMI availability; skipping by policy"
+              if should_skip_non_blocking_error "$region" "$err_file"; then
+                echo "[$region] non-blocking wait error; skipping by policy"
                 printf '%s\n' "$region" >> "$skipped_file"
                 return 0
               fi
