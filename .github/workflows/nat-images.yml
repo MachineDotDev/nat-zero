@@ -320,6 +320,12 @@ jobs:
               continue
             fi
 
+            if is_non_blocking_region "$region"; then
+              echo "[$region] skipped by policy"
+              printf '%s\n' "$region" >> "$skipped_file"
+              continue
+            fi
+
             while (( $(jobs -pr | wc -l) >= max_parallel )); do
               sleep 2
             done
