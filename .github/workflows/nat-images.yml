@@ -53,6 +53,8 @@ jobs:
         id: build
         working-directory: ami/first-party
         run: |
+          set -euo pipefail
+
           packer init nat-zero.pkr.hcl
           packer build -machine-readable \
             -var "region=${{ inputs.source_region }}" \
