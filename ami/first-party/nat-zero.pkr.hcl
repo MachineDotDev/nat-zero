@@ -36,6 +36,7 @@ source "amazon-ebs" "nat_zero" {
   instance_type = "t4g.nano"
   region        = var.region
   ami_regions   = var.ami_regions
+  max_retries   = 50
   subnet_id     = var.subnet_id
   ssh_username  = "ec2-user"
 
