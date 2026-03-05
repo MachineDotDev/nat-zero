@@ -22,6 +22,20 @@ on:
         required: true
         default: true
         type: boolean
+  workflow_call:
+    inputs:
+      source_region:
+        required: true
+        type: string
+      build_subnet_id:
+        required: true
+        type: string
+      role_to_assume:
+        required: false
+        type: string
+      run_integration_gate:
+        required: false
+        type: boolean
 
 concurrency:
   group: nat-zero-ami-release

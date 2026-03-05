@@ -4,6 +4,32 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      run_ami_flow:
+        description: Run first-party AMI build/test/promote flow instead of release-please
+        required: true
+        default: false
+        type: boolean
+      source_region:
+        description: AMI source build region
+        required: false
+        default: us-east-1
+        type: string
+      build_subnet_id:
+        description: Public subnet ID for Packer builder instance
+        required: false
+        default: ""
+        type: string
+      role_to_assume:
+        description: Optional AWS role ARN override
+        required: false
+        default: ""
+        type: string
+      run_integration_gate:
+        description: Run integration tests against newly built AMI before promotion
+        required: true
+        default: true
+        type: boolean
 
 permissions:
   contents: write
@@ -11,6 +37,7 @@ permissions:
 
 jobs:
   release-please:
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.run_ami_flow)
     runs-on: ubuntu-latest
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
@@ -56,3 +83,17 @@ jobs:
             --notes "Auto-built Go Lambda binary from ${{ needs.release-please.outputs.tag_name }}" \
             --latest=false 2>/dev/null || true
           gh release upload nat-zero-lambda-latest lambda.zip --clobber
+
+  run-ami-flow:
+    if: github.event_name == 'workflow_dispatch' && inputs.run_ami_flow
+    permissions:
+      id-token: write
+      contents: write
+      pull-requests: write
+    uses: ./.github/workflows/nat-images.yml
+    with:
+      source_region: ${{ inputs.source_region }}
+      build_subnet_id: ${{ inputs.build_subnet_id }}
+      role_to_assume: ${{ inputs.role_to_assume }}
+      run_integration_gate: ${{ inputs.run_integration_gate }}
+    secrets: inherit
