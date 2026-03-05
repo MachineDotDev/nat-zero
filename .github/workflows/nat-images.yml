@@ -202,6 +202,7 @@ jobs:
           ami_name="${{ needs.build_ami.outputs.ami_name }}"
           max_parallel=8
           max_attempts=20
+          allow_auth_failure_regions=("me-central-1")
 
           mapfile -t regions < <(
             aws account list-regions \
@@ -217,12 +218,26 @@ jobs:
 
           tmp_dir="$(mktemp -d)"
           trap 'rm -rf "${tmp_dir}"' EXIT
+          skipped_file="${tmp_dir}/skipped-regions"
+          : > "$skipped_file"
+
+          is_allowed_auth_failure_region() {
+            local region="$1"
+            local allowed
+            for allowed in "${allow_auth_failure_regions[@]}"; do
+              if [[ "$region" == "$allowed" ]]; then
+                return 0
+              fi
+            done
+            return 1
+          }
 
           copy_with_retry() {
             local region="$1"
             local attempt=1
             local ami_id=""
             local existing_id=""
+            local err_file="${tmp_dir}/err-${region}"
 
             while (( attempt <= max_attempts )); do
               existing_id="$(aws ec2 describe-images \
@@ -239,7 +254,7 @@ jobs:
                 ami_id="$existing_id"
                 echo "[$region] attempt ${attempt}: reusing existing copy $ami_id"
               else
-                ami_id="$(aws ec2 copy-image \
+                if ! ami_id="$(aws ec2 copy-image \
                   --region "$region" \
                   --source-region "$source_region" \
                   --source-image-id "$source_ami_id" \
@@ -247,13 +262,29 @@ jobs:
                   --description "Copy of ${source_ami_id} from ${source_region}" \
                   --copy-image-tags \
                   --query 'ImageId' \
-                  --output text)"
+                  --output text 2>"$err_file")"; then
+                  if grep -q "AuthFailure" "$err_file" && is_allowed_auth_failure_region "$region"; then
+                    echo "[$region] auth failure; skipping by policy"
+                    printf '%s\n' "$region" >> "$skipped_file"
+                    return 0
+                  fi
+                  echo "[$region] attempt ${attempt} copy-image failed: $(tr '\n' ' ' < "$err_file")"
+                  sleep $((attempt * 6))
+                  attempt=$((attempt + 1))
+                  continue
+                fi
                 echo "[$region] attempt ${attempt}: started copy $ami_id"
               fi
 
-              if aws ec2 wait image-available --region "$region" --image-ids "$ami_id"; then
+              if aws ec2 wait image-available --region "$region" --image-ids "$ami_id" 2>"$err_file"; then
                 echo "[$region] available: $ami_id"
                 printf '%s:%s\n' "$region" "$ami_id" > "${tmp_dir}/result-${region}"
+                return 0
+              fi
+
+              if grep -q "AuthFailure" "$err_file" && is_allowed_auth_failure_region "$region"; then
+                echo "[$region] auth failure while waiting for AMI availability; skipping by policy"
+                printf '%s\n' "$region" >> "$skipped_file"
                 return 0
               fi
 
@@ -307,6 +338,10 @@ jobs:
               continue
             fi
 
+            if grep -qx "$region" "$skipped_file"; then
+              continue
+            fi
+
             if [[ ! -s "${tmp_dir}/result-${region}" ]]; then
               echo "Missing copy result for region: $region" >&2
               exit 1
@@ -320,6 +355,15 @@ jobs:
             echo "$copied_table"
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
+
+          skipped_regions="$(sort -u "$skipped_file" | sed '/^$/d' || true)"
+          if [[ -n "$skipped_regions" ]]; then
+            {
+              echo 'skipped_regions<<EOF'
+              echo "$skipped_regions"
+              echo 'EOF'
+            } >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Pin module default AMI and refresh docs
         run: |
@@ -379,6 +423,17 @@ jobs:
           ${{ steps.copy.outputs.copied_table }}
           \`\`\`
           EOF
+
+          skipped_regions="${{ steps.copy.outputs.skipped_regions }}"
+          if [[ -n "$skipped_regions" ]]; then
+            {
+              echo
+              echo "Skipped regions (auth-failure policy):"
+              echo '```'
+              echo "$skipped_regions"
+              echo '```'
+            } >> /tmp/pr_body.md
+          fi
 
           gh pr create \
             --base main \
