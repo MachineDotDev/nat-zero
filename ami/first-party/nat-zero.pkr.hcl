@@ -32,7 +32,6 @@ source "amazon-ebs" "nat_zero" {
   region        = var.region
   subnet_id     = var.subnet_id
   ssh_username  = "ec2-user"
-  imds_support  = "v2.0"
 
   launch_block_device_mappings {
     device_name           = "/dev/xvda"
