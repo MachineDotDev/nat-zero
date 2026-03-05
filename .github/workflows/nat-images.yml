@@ -409,6 +409,8 @@ jobs:
 
           python3 -m pip install --user pre-commit
           export PATH="$HOME/.local/bin:$PATH"
+          # First run writes docs, second run verifies no further changes.
+          pre-commit run terraform-docs-go --all-files
           pre-commit run terraform-docs-go --all-files
 
       - name: Create promotion PR
@@ -449,7 +451,7 @@ jobs:
           if [[ -n "$skipped_regions" ]]; then
             {
               echo
-              echo "Skipped regions (auth-failure policy):"
+              echo "Skipped regions (non-blocking policy):"
               echo '```'
               echo "$skipped_regions"
               echo '```'
