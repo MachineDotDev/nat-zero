@@ -7,14 +7,6 @@
 | <a name="requirement_null"></a> [null](#requirement\_null) | >= 3.0 |
 | <a name="requirement_time"></a> [time](#requirement\_time) | >= 0.9 |
 
-## Providers
-
-| Name | Version |
-|------|---------|
-| <a name="provider_aws"></a> [aws](#provider\_aws) | 6.34.0 |
-| <a name="provider_null"></a> [null](#provider\_null) | 3.2.4 |
-| <a name="provider_time"></a> [time](#provider\_time) | 0.13.1 |
-
 ## Modules
 
 No modules.
