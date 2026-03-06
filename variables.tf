@@ -76,13 +76,13 @@ variable "ami_id" {
 
 variable "ami_owner_account" {
   type        = string
-  default     = null
+  default     = "590144423513"
   description = "Owner account ID used when resolving the default nat-zero AMI by name pattern. Override this to use your own shared AMI."
 }
 
 variable "ami_name_pattern" {
   type        = string
-  default     = null
+  default     = "nat-zero-al2023-minimal-arm64-20260306-064438"
   description = "AMI name pattern used when resolving the default nat-zero AMI. Override this to use your own shared AMI."
 }
 

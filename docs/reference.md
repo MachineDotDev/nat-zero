@@ -43,8 +43,8 @@ No modules.
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
 | <a name="input_ami_id"></a> [ami\_id](#input\_ami\_id) | Explicit AMI ID to use (overrides AMI lookup entirely) | `string` | `null` | no |
-| <a name="input_ami_name_pattern"></a> [ami\_name\_pattern](#input\_ami\_name\_pattern) | AMI name pattern used when resolving the default nat-zero AMI. Override this to use your own shared AMI. | `string` | `null` | no |
-| <a name="input_ami_owner_account"></a> [ami\_owner\_account](#input\_ami\_owner\_account) | Owner account ID used when resolving the default nat-zero AMI by name pattern. Override this to use your own shared AMI. | `string` | `null` | no |
+| <a name="input_ami_name_pattern"></a> [ami\_name\_pattern](#input\_ami\_name\_pattern) | AMI name pattern used when resolving the default nat-zero AMI. Override this to use your own shared AMI. | `string` | `"nat-zero-al2023-minimal-arm64-20260306-064438"` | no |
+| <a name="input_ami_owner_account"></a> [ami\_owner\_account](#input\_ami\_owner\_account) | Owner account ID used when resolving the default nat-zero AMI by name pattern. Override this to use your own shared AMI. | `string` | `"590144423513"` | no |
 | <a name="input_availability_zones"></a> [availability\_zones](#input\_availability\_zones) | List of availability zones to deploy NAT instances in | `list(string)` | n/a | yes |
 | <a name="input_block_device_size"></a> [block\_device\_size](#input\_block\_device\_size) | Size in GB of the root EBS volume | `number` | `10` | no |
 | <a name="input_build_lambda_locally"></a> [build\_lambda\_locally](#input\_build\_lambda\_locally) | Build the Lambda binary from Go source instead of downloading a pre-compiled release. Requires Go and zip installed locally. | `bool` | `false` | no |
