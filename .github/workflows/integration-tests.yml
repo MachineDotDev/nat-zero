@@ -31,8 +31,7 @@ permissions:
   contents: read
 
 env:
-  TEST_NAT_AMI_OWNER_ACCOUNT: "590144423513"
-  TEST_NAT_AMI_NAME_PATTERN: "nat-zero-al2023-minimal-arm64-*"
+  TEST_NAT_AMI_ID: ${{ vars.NAT_ZERO_TEST_AMI_ID }}
 
 jobs:
   integration-test:
@@ -64,18 +63,10 @@ jobs:
           INPUT_NAT_AMI_ID: ${{ inputs.nat_ami_id || github.event.inputs.nat_ami_id || '' }}
           INPUT_UPDATED_NAT_AMI_ID: ${{ inputs.updated_nat_ami_id || github.event.inputs.updated_nat_ami_id || '' }}
         run: |
-          nat_ami_id="$INPUT_NAT_AMI_ID"
-          if [ -z "$nat_ami_id" ]; then
-            nat_ami_id="$(aws ec2 describe-images \
-              --region us-east-1 \
-              --owners "$TEST_NAT_AMI_OWNER_ACCOUNT" \
-              --filters "Name=name,Values=$TEST_NAT_AMI_NAME_PATTERN" "Name=state,Values=available" \
-              --query 'reverse(sort_by(Images,&CreationDate))[0].ImageId' \
-              --output text)"
-          fi
+          nat_ami_id="${INPUT_NAT_AMI_ID:-$TEST_NAT_AMI_ID}"
 
-          if [ -z "$nat_ami_id" ] || [ "$nat_ami_id" = "None" ]; then
-            echo "failed to resolve the default integration NAT AMI" >&2
+          if [ -z "$nat_ami_id" ]; then
+            echo "default integration NAT AMI is not configured" >&2
             exit 1
           fi
 

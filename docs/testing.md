@@ -57,7 +57,7 @@ Integration tests run in GitHub Actions when the `integration-test` label is add
 - Concurrency: one test at a time (`cancel-in-progress: false`)
 - Timeout: 15 minutes
 - Region: us-east-1
-- Default NAT AMI: resolves the shared test nat-zero AMI from account `590144423513` in us-east-1 unless `nat_ami_id` is supplied explicitly
+- Default NAT AMI: shared private test nat-zero AMI supplied via the GitHub Actions variable `NAT_ZERO_TEST_AMI_ID` unless `nat_ami_id` is supplied explicitly
 
 ## Orphan Detection
 
