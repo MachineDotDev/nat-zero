@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"sort"
 	"strings"
 	"time"
 
@@ -321,33 +320,6 @@ func (h *Handler) isCurrentConfig(inst *Instance) bool {
 
 // --- NAT lifecycle helpers ---
 
-func (h *Handler) resolveAMI(ctx context.Context) string {
-	defer timed("resolve_ami")()
-	resp, err := h.EC2.DescribeImages(ctx, &ec2.DescribeImagesInput{
-		Owners: []string{h.AMIOwner},
-		Filters: []ec2types.Filter{
-			{Name: aws.String("name"), Values: []string{h.AMIPattern}},
-			{Name: aws.String("state"), Values: []string{"available"}},
-		},
-	})
-	if err != nil {
-		log.Printf("AMI lookup failed, using launch template default: %v", err)
-		return ""
-	}
-	if len(resp.Images) == 0 {
-		return ""
-	}
-
-	images := resp.Images
-	sort.Slice(images, func(i, j int) bool {
-		return aws.ToString(images[i].CreationDate) > aws.ToString(images[j].CreationDate)
-	})
-	ami := images[0]
-	amiID := aws.ToString(ami.ImageId)
-	log.Printf("Using AMI %s (%s)", amiID, aws.ToString(ami.Name))
-	return amiID
-}
-
 func (h *Handler) resolveLT(ctx context.Context, az, vpc string) (string, int64) {
 	defer timed("resolve_lt")()
 	resp, err := h.EC2.DescribeLaunchTemplates(ctx, &ec2.DescribeLaunchTemplatesInput{
@@ -361,16 +333,10 @@ func (h *Handler) resolveLT(ctx context.Context, az, vpc string) (string, int64)
 	}
 
 	ltID := aws.ToString(resp.LaunchTemplates[0].LaunchTemplateId)
-
-	verResp, err := h.EC2.DescribeLaunchTemplateVersions(ctx, &ec2.DescribeLaunchTemplateVersionsInput{
-		LaunchTemplateId: aws.String(ltID),
-		Versions:         []string{"$Latest"},
-	})
-	if err != nil || len(verResp.LaunchTemplateVersions) == 0 {
+	version := aws.ToInt64(resp.LaunchTemplates[0].LatestVersionNumber)
+	if version == 0 {
 		return "", 0
 	}
-
-	version := aws.ToInt64(verResp.LaunchTemplateVersions[0].VersionNumber)
 	return ltID, version
 }
 
@@ -382,8 +348,6 @@ func (h *Handler) createNAT(ctx context.Context, az, vpc string) string {
 		log.Printf("No launch template for AZ=%s VPC=%s", az, vpc)
 		return ""
 	}
-
-	amiID := h.resolveAMI(ctx)
 
 	input := &ec2.RunInstancesInput{
 		LaunchTemplate: &ec2types.LaunchTemplateSpecification{
@@ -401,10 +365,6 @@ func (h *Handler) createNAT(ctx context.Context, az, vpc string) string {
 				{Key: aws.String("ConfigVersion"), Value: aws.String(h.ConfigVersion)},
 			},
 		}}
-	}
-
-	if amiID != "" {
-		input.ImageId = aws.String(amiID)
 	}
 
 	resp, err := h.EC2.RunInstances(ctx, input)

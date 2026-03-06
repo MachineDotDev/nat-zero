@@ -4,6 +4,23 @@ on:
   pull_request:
     types: [labeled]
   workflow_dispatch:
+    inputs:
+      nat_ami_id:
+        description: Explicit NAT AMI ID to use for the integration fixture
+        required: false
+        type: string
+      updated_nat_ami_id:
+        description: Optional replacement NAT AMI ID to exercise the AMI upgrade path
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      nat_ami_id:
+        required: false
+        type: string
+      updated_nat_ami_id:
+        required: false
+        type: string
 
 concurrency:
   group: nat-zero-integration
@@ -16,11 +33,15 @@ permissions:
 jobs:
   integration-test:
     if: >-
+      github.event_name == 'workflow_call' ||
       github.event_name == 'workflow_dispatch' ||
       github.event.label.name == 'integration-test'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: integration
+    env:
+      NAT_ZERO_TEST_NAT_AMI_ID: ${{ inputs.nat_ami_id || github.event.inputs.nat_ami_id || '' }}
+      NAT_ZERO_TEST_UPDATED_NAT_AMI_ID: ${{ inputs.updated_nat_ami_id || github.event.inputs.updated_nat_ami_id || '' }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 

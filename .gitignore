@@ -10,6 +10,7 @@
 cmd/lambda/lambda
 cmd/lambda/bootstrap
 *.zip
+ami/manifest.json
 
 # Go
 vendor/

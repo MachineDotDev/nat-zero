@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -112,9 +113,21 @@ func TestNatZero(t *testing.T) {
 		t.Logf("Deleted SQS queue %s", queueName)
 	}()
 
+	initialNatAMI := strings.TrimSpace(os.Getenv("NAT_ZERO_TEST_NAT_AMI_ID"))
+	updatedNatAMI := strings.TrimSpace(os.Getenv("NAT_ZERO_TEST_UPDATED_NAT_AMI_ID"))
+	tfVars := map[string]interface{}{}
+	if initialNatAMI != "" {
+		tfVars["nat_ami_id"] = initialNatAMI
+		t.Logf("Initial NAT AMI override: %s", initialNatAMI)
+	}
+	if updatedNatAMI != "" {
+		t.Logf("Updated NAT AMI target: %s", updatedNatAMI)
+	}
+
 	opts := terraform.WithDefaultRetryableErrors(t, &terraform.Options{
 		TerraformDir: "./fixture",
 		NoColor:      true,
+		Vars:         tfVars,
 	})
 	defer func() {
 		destroyStart := time.Now()
@@ -170,50 +183,27 @@ func TestNatZero(t *testing.T) {
 	amiID := getLatestAL2023AMI(t, ec2Client)
 
 	// Shared across phases — set by Phase 1, used by Phase 2.
-	var workloadID string
+	var activeWorkloadID string
 
 	// ── Phase 1: NAT creation and connectivity ──────────────────────────
 	// Launch a workload and let EventBridge trigger the Lambda automatically.
 
 	t.Run("NATCreationAndConnectivity", func(t *testing.T) {
 		wlStart := time.Now()
-		workloadID = launchWorkload(t, ec2Client, privateSubnet, amiID, runID, profileName, queueURL)
+		activeWorkloadID = launchWorkload(t, ec2Client, privateSubnet, amiID, runID, profileName, queueURL)
 		record("Launch workload instance", time.Since(wlStart))
-		t.Logf("Launched workload %s in VPC %s", workloadID, vpcID)
+		t.Logf("Launched workload %s in VPC %s", activeWorkloadID, vpcID)
 
 		// EventBridge fires when the workload goes pending/running,
 		// triggering the Lambda to create a NAT and attach an EIP.
 		t.Log("Waiting for NAT to be running with EIP (via EventBridge)...")
 		start := time.Now()
-		var natInstance *ec2.Instance
-		retry.DoWithRetry(t, "NAT running with EIP", 100, 2*time.Second, func() (string, error) {
-			nats := findNATInstances(t, ec2Client, vpcID)
-			for _, n := range nats {
-				if aws.StringValue(n.State.Name) == "running" {
-					for _, eni := range n.NetworkInterfaces {
-						if aws.Int64Value(eni.Attachment.DeviceIndex) == 0 &&
-							eni.Association != nil && eni.Association.PublicIp != nil {
-							natInstance = n
-							return "OK", nil
-						}
-					}
-					return "", fmt.Errorf("NAT running but no EIP yet")
-				}
-			}
-			return "", fmt.Errorf("no running NAT (%d found)", len(nats))
-		})
+		natInstance := waitForRunningNATWithEIP(t, ec2Client, vpcID, "NAT running with EIP")
 		natUpTime := time.Since(start)
 		record("Wait for NAT running with EIP", natUpTime)
 		t.Logf("NAT up with EIP in %s", natUpTime.Round(time.Millisecond))
 
-		// Get NAT public IP from primary ENI.
-		var natEIP string
-		for _, eni := range natInstance.NetworkInterfaces {
-			if aws.Int64Value(eni.Attachment.DeviceIndex) == 0 && eni.Association != nil {
-				natEIP = aws.StringValue(eni.Association.PublicIp)
-				break
-			}
-		}
+		natEIP := natPublicIP(natInstance)
 		require.NotEmpty(t, natEIP, "NAT should have a public IP")
 
 		// Validate NAT tags.
@@ -253,17 +243,18 @@ func TestNatZero(t *testing.T) {
 	// scale-down flow: stop NAT, then detach/release EIP.
 
 	t.Run("NATScaleDown", func(t *testing.T) {
-		require.NotEmpty(t, workloadID, "Phase 1 must set workloadID")
+		require.NotEmpty(t, activeWorkloadID, "Phase 1 must set activeWorkloadID")
 
 		// Terminate the workload instance. EventBridge fires shutting-down
 		// and terminated events which trigger the Lambda to stop the NAT.
 		t.Log("Terminating workload to trigger NAT scale-down...")
 		termStart := time.Now()
 		_, err := ec2Client.TerminateInstances(&ec2.TerminateInstancesInput{
-			InstanceIds: []*string{aws.String(workloadID)},
+			InstanceIds: []*string{aws.String(activeWorkloadID)},
 		})
 		require.NoError(t, err)
 		record("Terminate workload instance", time.Since(termStart))
+		activeWorkloadID = ""
 
 		// Wait for NAT to reach stopped state.
 		t.Log("Waiting for NAT to stop (via EventBridge)...")
@@ -319,28 +310,13 @@ func TestNatZero(t *testing.T) {
 		newWorkloadID := launchWorkload(t, ec2Client, privateSubnet, amiID, runID, profileName, queueURL)
 		record("Launch workload instance (restart)", time.Since(wlStart))
 		t.Logf("Launched workload %s", newWorkloadID)
+		activeWorkloadID = newWorkloadID
 
 		// EventBridge fires when the new workload goes pending/running,
 		// triggering the Lambda to start the stopped NAT.
 		t.Log("Waiting for restarted NAT to be running with EIP (via EventBridge)...")
 		start := time.Now()
-		var natInstance *ec2.Instance
-		retry.DoWithRetry(t, "NAT restarted with EIP", 100, 2*time.Second, func() (string, error) {
-			nats := findNATInstances(t, ec2Client, vpcID)
-			for _, n := range nats {
-				if aws.StringValue(n.State.Name) == "running" {
-					for _, eni := range n.NetworkInterfaces {
-						if aws.Int64Value(eni.Attachment.DeviceIndex) == 0 &&
-							eni.Association != nil && eni.Association.PublicIp != nil {
-							natInstance = n
-							return "OK", nil
-						}
-					}
-					return "", fmt.Errorf("NAT running but no EIP yet")
-				}
-			}
-			return "", fmt.Errorf("no running NAT (%d found)", len(nats))
-		})
+		natInstance := waitForRunningNATWithEIP(t, ec2Client, vpcID, "NAT restarted with EIP")
 		natRestartTime := time.Since(start)
 		record("Wait for NAT restarted with EIP", natRestartTime)
 		t.Logf("NAT restarted with EIP in %s", natRestartTime.Round(time.Millisecond))
@@ -348,13 +324,7 @@ func TestNatZero(t *testing.T) {
 		require.NotNil(t, natInstance, "NAT should be running")
 
 		// Verify the restarted NAT has an EIP.
-		var natEIP string
-		for _, eni := range natInstance.NetworkInterfaces {
-			if aws.Int64Value(eni.Attachment.DeviceIndex) == 0 && eni.Association != nil {
-				natEIP = aws.StringValue(eni.Association.PublicIp)
-				break
-			}
-		}
+		natEIP := natPublicIP(natInstance)
 		require.NotEmpty(t, natEIP, "Restarted NAT should have a public IP")
 		t.Logf("Restarted NAT has EIP %s", natEIP)
 
@@ -374,7 +344,70 @@ func TestNatZero(t *testing.T) {
 		}
 	})
 
-	// ── Phase 4: Cleanup action ─────────────────────────────────────────
+	// ── Phase 4: NAT replacement on AMI update ─────────────────────────
+
+	t.Run("NATAMIUpgrade", func(t *testing.T) {
+		if updatedNatAMI == "" {
+			t.Skip("NAT_ZERO_TEST_UPDATED_NAT_AMI_ID not set")
+		}
+		require.NotEmpty(t, activeWorkloadID, "AMI update phase requires an active workload")
+
+		currentNat := waitForRunningNATWithEIP(t, ec2Client, vpcID, "current NAT running with EIP")
+		oldNatID := aws.StringValue(currentNat.InstanceId)
+		oldNatAMI := aws.StringValue(currentNat.ImageId)
+		require.NotEmpty(t, oldNatID, "current NAT should have an instance id")
+		require.NotEmpty(t, oldNatAMI, "current NAT should have an AMI id")
+		if oldNatAMI == updatedNatAMI {
+			t.Skipf("current NAT already uses target AMI %s", updatedNatAMI)
+		}
+		t.Logf("Updating NAT AMI from %s to %s", oldNatAMI, updatedNatAMI)
+
+		applyStart := time.Now()
+		opts.Vars["nat_ami_id"] = updatedNatAMI
+		terraform.Apply(t, opts)
+		record("Terraform apply (AMI update)", time.Since(applyStart))
+
+		invokeTerminateStart := time.Now()
+		invokeLambda(t, lambdaClient, lambdaName, map[string]string{
+			"instance_id": activeWorkloadID,
+			"state":       "running",
+		})
+		record("Lambda invoke (AMI update terminate)", time.Since(invokeTerminateStart))
+
+		waitTermStart := time.Now()
+		waitForInstanceTerminated(t, ec2Client, oldNatID)
+		record("Wait for outdated NAT terminated", time.Since(waitTermStart))
+
+		invokeCreateStart := time.Now()
+		invokeLambda(t, lambdaClient, lambdaName, map[string]string{
+			"instance_id": activeWorkloadID,
+			"state":       "running",
+		})
+		record("Lambda invoke (AMI update create)", time.Since(invokeCreateStart))
+
+		replacementStart := time.Now()
+		replacementNat := waitForRunningNATWithEIP(t, ec2Client, vpcID, "replacement NAT running with EIP")
+		record("Wait for replacement NAT running with EIP", time.Since(replacementStart))
+
+		require.NotEqual(t, oldNatID, aws.StringValue(replacementNat.InstanceId), "replacement NAT should be a new instance")
+		require.Equal(t, updatedNatAMI, aws.StringValue(replacementNat.ImageId), "replacement NAT should use updated AMI")
+
+		replacementEIP := natPublicIP(replacementNat)
+		require.NotEmpty(t, replacementEIP, "replacement NAT should have a public IP")
+
+		upgradeWorkloadStart := time.Now()
+		upgradeWorkloadID := launchWorkload(t, ec2Client, privateSubnet, amiID, runID, profileName, queueURL)
+		record("Launch workload instance (AMI update)", time.Since(upgradeWorkloadStart))
+		activeWorkloadID = upgradeWorkloadID
+
+		t.Log("Waiting for workload connectivity via replacement NAT (SQS)...")
+		egressStart := time.Now()
+		msg := waitForEgress(t, sqsClient, queueURL, 4*time.Minute)
+		record("Wait for workload egress IP (AMI update)", time.Since(egressStart))
+		require.Equal(t, replacementEIP, msg.EgressIP, "workload egress IP should match replacement NAT EIP")
+	})
+
+	// ── Phase 5: Cleanup action ─────────────────────────────────────────
 
 	t.Run("CleanupAction", func(t *testing.T) {
 		// Terminate all test workloads before cleanup to match production
@@ -656,6 +689,56 @@ func findWorkloadsInState(t *testing.T, c *ec2.EC2, vpcID, runID string, states 
 		res = append(res, r.Instances...)
 	}
 	return res
+}
+
+func waitForRunningNATWithEIP(t *testing.T, c *ec2.EC2, vpcID, description string) *ec2.Instance {
+	t.Helper()
+
+	var natInstance *ec2.Instance
+	retry.DoWithRetry(t, description, 100, 2*time.Second, func() (string, error) {
+		nats := findNATInstances(t, c, vpcID)
+		for _, n := range nats {
+			if aws.StringValue(n.State.Name) == "running" && natPublicIP(n) != "" {
+				natInstance = n
+				return "OK", nil
+			}
+			if aws.StringValue(n.State.Name) == "running" {
+				return "", fmt.Errorf("NAT running but no EIP yet")
+			}
+		}
+		return "", fmt.Errorf("no running NAT (%d found)", len(nats))
+	})
+	return natInstance
+}
+
+func waitForInstanceTerminated(t *testing.T, c *ec2.EC2, instanceID string) {
+	t.Helper()
+
+	retry.DoWithRetry(t, "instance terminated", 60, 2*time.Second, func() (string, error) {
+		out, err := c.DescribeInstances(&ec2.DescribeInstancesInput{
+			InstanceIds: []*string{aws.String(instanceID)},
+		})
+		if err != nil {
+			return "", err
+		}
+		if len(out.Reservations) == 0 || len(out.Reservations[0].Instances) == 0 {
+			return "OK", nil
+		}
+		state := aws.StringValue(out.Reservations[0].Instances[0].State.Name)
+		if state == ec2.InstanceStateNameTerminated {
+			return "OK", nil
+		}
+		return "", fmt.Errorf("instance %s still %s", instanceID, state)
+	})
+}
+
+func natPublicIP(nat *ec2.Instance) string {
+	for _, eni := range nat.NetworkInterfaces {
+		if aws.Int64Value(eni.Attachment.DeviceIndex) == 0 && eni.Association != nil {
+			return aws.StringValue(eni.Association.PublicIp)
+		}
+	}
+	return ""
 }
 
 func launchWorkload(t *testing.T, c *ec2.EC2, subnet, ami, runID, profile, queueURL string) string {

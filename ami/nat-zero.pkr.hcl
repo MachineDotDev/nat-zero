@@ -39,7 +39,8 @@ source "amazon-ebs" "nat_zero" {
     volume_size           = var.root_volume_size
     volume_type           = "gp3"
     delete_on_termination = true
-    encrypted             = true
+    # Public AMIs cannot reference encrypted backing snapshots.
+    encrypted = false
   }
 
   source_ami_filter {
@@ -53,7 +54,7 @@ source "amazon-ebs" "nat_zero" {
   }
 
   tags = {
-    Name         = "nat-zero-first-party"
+    Name         = "nat-zero-ami-build"
     Project      = "nat-zero"
     Role         = "nat"
     ManagedBy    = "packer"
@@ -63,7 +64,7 @@ source "amazon-ebs" "nat_zero" {
 }
 
 build {
-  name    = "nat-zero-first-party"
+  name    = "nat-zero-ami"
   sources = ["source.amazon-ebs.nat_zero"]
 
   provisioner "file" {
@@ -84,5 +85,9 @@ build {
   provisioner "shell" {
     execute_command = "sudo -E sh -eux '{{ .Path }}'"
     script          = "scripts/configure.sh"
+  }
+
+  post-processor "manifest" {
+    output = "manifest.json"
   }
 }

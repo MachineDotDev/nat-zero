@@ -11,20 +11,17 @@ import (
 
 // mockEC2 implements EC2API with per-method function fields for test control.
 type mockEC2 struct {
-	DescribeInstancesFn              func(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error)
-	RunInstancesFn                   func(ctx context.Context, params *ec2.RunInstancesInput, optFns ...func(*ec2.Options)) (*ec2.RunInstancesOutput, error)
-	StartInstancesFn                 func(ctx context.Context, params *ec2.StartInstancesInput, optFns ...func(*ec2.Options)) (*ec2.StartInstancesOutput, error)
-	StopInstancesFn                  func(ctx context.Context, params *ec2.StopInstancesInput, optFns ...func(*ec2.Options)) (*ec2.StopInstancesOutput, error)
-	TerminateInstancesFn             func(ctx context.Context, params *ec2.TerminateInstancesInput, optFns ...func(*ec2.Options)) (*ec2.TerminateInstancesOutput, error)
-	AllocateAddressFn                func(ctx context.Context, params *ec2.AllocateAddressInput, optFns ...func(*ec2.Options)) (*ec2.AllocateAddressOutput, error)
-	AssociateAddressFn               func(ctx context.Context, params *ec2.AssociateAddressInput, optFns ...func(*ec2.Options)) (*ec2.AssociateAddressOutput, error)
-	DisassociateAddressFn            func(ctx context.Context, params *ec2.DisassociateAddressInput, optFns ...func(*ec2.Options)) (*ec2.DisassociateAddressOutput, error)
-	ReleaseAddressFn                 func(ctx context.Context, params *ec2.ReleaseAddressInput, optFns ...func(*ec2.Options)) (*ec2.ReleaseAddressOutput, error)
-	DescribeAddressesFn              func(ctx context.Context, params *ec2.DescribeAddressesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeAddressesOutput, error)
-	DescribeNetworkInterfacesFn      func(ctx context.Context, params *ec2.DescribeNetworkInterfacesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeNetworkInterfacesOutput, error)
-	DescribeImagesFn                 func(ctx context.Context, params *ec2.DescribeImagesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeImagesOutput, error)
-	DescribeLaunchTemplatesFn        func(ctx context.Context, params *ec2.DescribeLaunchTemplatesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeLaunchTemplatesOutput, error)
-	DescribeLaunchTemplateVersionsFn func(ctx context.Context, params *ec2.DescribeLaunchTemplateVersionsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeLaunchTemplateVersionsOutput, error)
+	DescribeInstancesFn       func(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error)
+	RunInstancesFn            func(ctx context.Context, params *ec2.RunInstancesInput, optFns ...func(*ec2.Options)) (*ec2.RunInstancesOutput, error)
+	StartInstancesFn          func(ctx context.Context, params *ec2.StartInstancesInput, optFns ...func(*ec2.Options)) (*ec2.StartInstancesOutput, error)
+	StopInstancesFn           func(ctx context.Context, params *ec2.StopInstancesInput, optFns ...func(*ec2.Options)) (*ec2.StopInstancesOutput, error)
+	TerminateInstancesFn      func(ctx context.Context, params *ec2.TerminateInstancesInput, optFns ...func(*ec2.Options)) (*ec2.TerminateInstancesOutput, error)
+	AllocateAddressFn         func(ctx context.Context, params *ec2.AllocateAddressInput, optFns ...func(*ec2.Options)) (*ec2.AllocateAddressOutput, error)
+	AssociateAddressFn        func(ctx context.Context, params *ec2.AssociateAddressInput, optFns ...func(*ec2.Options)) (*ec2.AssociateAddressOutput, error)
+	DisassociateAddressFn     func(ctx context.Context, params *ec2.DisassociateAddressInput, optFns ...func(*ec2.Options)) (*ec2.DisassociateAddressOutput, error)
+	ReleaseAddressFn          func(ctx context.Context, params *ec2.ReleaseAddressInput, optFns ...func(*ec2.Options)) (*ec2.ReleaseAddressOutput, error)
+	DescribeAddressesFn       func(ctx context.Context, params *ec2.DescribeAddressesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeAddressesOutput, error)
+	DescribeLaunchTemplatesFn func(ctx context.Context, params *ec2.DescribeLaunchTemplatesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeLaunchTemplatesOutput, error)
 
 	// Call tracking (mutex-protected for concurrent access)
 	mu    sync.Mutex
@@ -134,36 +131,12 @@ func (m *mockEC2) DescribeAddresses(ctx context.Context, params *ec2.DescribeAdd
 	return &ec2.DescribeAddressesOutput{}, nil
 }
 
-func (m *mockEC2) DescribeNetworkInterfaces(ctx context.Context, params *ec2.DescribeNetworkInterfacesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeNetworkInterfacesOutput, error) {
-	m.track("DescribeNetworkInterfaces", params)
-	if m.DescribeNetworkInterfacesFn != nil {
-		return m.DescribeNetworkInterfacesFn(ctx, params, optFns...)
-	}
-	return &ec2.DescribeNetworkInterfacesOutput{}, nil
-}
-
-func (m *mockEC2) DescribeImages(ctx context.Context, params *ec2.DescribeImagesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeImagesOutput, error) {
-	m.track("DescribeImages", params)
-	if m.DescribeImagesFn != nil {
-		return m.DescribeImagesFn(ctx, params, optFns...)
-	}
-	return &ec2.DescribeImagesOutput{}, nil
-}
-
 func (m *mockEC2) DescribeLaunchTemplates(ctx context.Context, params *ec2.DescribeLaunchTemplatesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeLaunchTemplatesOutput, error) {
 	m.track("DescribeLaunchTemplates", params)
 	if m.DescribeLaunchTemplatesFn != nil {
 		return m.DescribeLaunchTemplatesFn(ctx, params, optFns...)
 	}
 	return &ec2.DescribeLaunchTemplatesOutput{}, nil
-}
-
-func (m *mockEC2) DescribeLaunchTemplateVersions(ctx context.Context, params *ec2.DescribeLaunchTemplateVersionsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeLaunchTemplateVersionsOutput, error) {
-	m.track("DescribeLaunchTemplateVersions", params)
-	if m.DescribeLaunchTemplateVersionsFn != nil {
-		return m.DescribeLaunchTemplateVersionsFn(ctx, params, optFns...)
-	}
-	return &ec2.DescribeLaunchTemplateVersionsOutput{}, nil
 }
 
 // --- Test helper builders ---
@@ -220,8 +193,6 @@ func newTestHandler(mock *mockEC2) *Handler {
 		IgnoreTagKey:   "nat-zero:ignore",
 		IgnoreTagValue: "true",
 		TargetVPC:      testVPC,
-		AMIOwner:       "568608671756",
-		AMIPattern:     "fck-nat-al2023-*-arm64-*",
 		ConfigVersion:  "",
 	}
 }

@@ -66,17 +66,13 @@ resource "aws_lambda_function" "nat_zero" {
 
   environment {
     variables = {
-      NAT_TAG_KEY       = var.nat_tag_key
-      NAT_TAG_VALUE     = var.nat_tag_value
-      IGNORE_TAG_KEY    = var.ignore_tag_key
-      IGNORE_TAG_VALUE  = var.ignore_tag_value
-      TARGET_VPC_ID     = var.vpc_id
-      AMI_OWNER_ACCOUNT = var.use_fck_nat_ami ? "568608671756" : var.custom_ami_owner
-      AMI_NAME_PATTERN  = var.use_fck_nat_ami ? "fck-nat-al2023-*-arm64-*" : var.custom_ami_name_pattern
+      NAT_TAG_KEY      = var.nat_tag_key
+      NAT_TAG_VALUE    = var.nat_tag_value
+      IGNORE_TAG_KEY   = var.ignore_tag_key
+      IGNORE_TAG_VALUE = var.ignore_tag_value
+      TARGET_VPC_ID    = var.vpc_id
       CONFIG_VERSION = sha256(join(",", [
-        var.use_fck_nat_ami ? "568608671756" : var.custom_ami_owner,
-        var.use_fck_nat_ami ? "fck-nat-al2023-*-arm64-*" : var.custom_ami_name_pattern,
-        coalesce(var.ami_id, "none"),
+        coalesce(local.effective_ami_id, "missing"),
         var.instance_type,
         var.market_type,
         tostring(var.block_device_size),

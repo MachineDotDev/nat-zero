@@ -6,18 +6,18 @@ Internal reference for GitHub Actions workflows, repo rulesets, and the release 
 
 | Workflow | File | Triggers | Required Check |
 |----------|------|----------|----------------|
-| Pre-commit | `precommit.yml` | All PRs; push to `main` (filtered paths) | `precommit` |
+| Pre-commit | `precommit.yml` | All PRs | `precommit` |
 | Go Tests | `go-tests.yml` | PRs touching `cmd/lambda/**`; push to `main` | `go-test` |
-| Integration Tests | `integration-tests.yml` | PR labeled `integration-test`; manual dispatch | `integration-test` |
+| Integration Tests | `integration-tests.yml` | PR labeled `integration-test`; manual dispatch; reusable workflow | `integration-test` |
+| NAT Images | `nat-images.yml` | Manual dispatch | No (promotion workflow) |
 | Docs | `docs.yml` | Push to `main` (filtered paths) | No (post-merge deploy) |
 | Release | `release-please.yml` | Push to `main`; manual dispatch | No (post-merge) |
 
 ## Pre-commit (`precommit.yml`)
 
-Runs the repo's `.pre-commit-config.yaml` hooks: terraform fmt, tflint, terraform-docs, Go staticcheck, etc.
+Runs the repo's `.pre-commit-config.yaml` hooks: terraform fmt/validate, tflint, terraform-docs, Go staticcheck, actionlint, shellcheck, and Packer fmt/validate.
 
 - **PR trigger**: All pull requests, all paths (no path filter).
-- **Push trigger**: Only on `main`, only when `*.tf`, `cmd/lambda/**`, `.pre-commit-config.yaml`, or `.terraform-docs.yml` change.
 - **Job name**: `precommit` (required status check for merge).
 
 ## Go Tests (`go-tests.yml`)
@@ -35,11 +35,15 @@ Full end-to-end test: deploys real AWS infrastructure via Terratest, exercises t
 
 - **PR trigger**: `labeled` type only. Runs when the `integration-test` label is added.
 - **Manual trigger**: `workflow_dispatch`.
+- **Reusable trigger**: `workflow_call`.
 - **Condition**: `github.event.label.name == 'integration-test'` (or manual dispatch).
 - **Concurrency**: Group `nat-zero-integration`, `cancel-in-progress: false`. Only one integration test runs at a time; new ones queue.
 - **Environment**: `integration` (holds the `INTEGRATION_ROLE_ARN` secret for OIDC).
 - **Timeout**: 15 minutes.
 - **Job name**: `integration-test` (required status check for merge).
+- **Optional inputs**:
+  - `nat_ami_id` to force the fixture onto a specific NAT AMI.
+  - `updated_nat_ami_id` to exercise the AMI replacement path after a second `terraform apply`.
 
 ### Steps
 
@@ -47,6 +51,18 @@ Full end-to-end test: deploys real AWS infrastructure via Terratest, exercises t
 2. Assume AWS role via OIDC (`aws-actions/configure-aws-credentials`).
 3. Build the Lambda binary from source (`cmd/lambda/` -> `.build/lambda.zip`).
 4. Run `go test -v -timeout 10m -count=1` in `tests/integration/`.
+
+## NAT Images (`nat-images.yml`)
+
+Manual promotion workflow for the default public nat-zero AMI.
+
+1. Build the AMI with Packer in the chosen source region.
+2. Copy it to every enabled AWS region in the account.
+3. Run two us-east-1 integration gates:
+   - direct test of the new AMI
+   - upgrade-path test that reapplies the module with the new AMI and verifies the old NAT is replaced
+4. Make every copied AMI public.
+5. Open a PR that updates the Terraform defaults (`ami_owner_account`, `ami_name_pattern`) so merge + release-please can publish the new module version.
 
 ## Docs (`docs.yml`)
 

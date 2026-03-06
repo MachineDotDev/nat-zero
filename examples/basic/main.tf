@@ -48,7 +48,7 @@ module "nat_zero" {
   private_route_table_ids     = module.vpc.private_route_table_ids
   private_subnets_cidr_blocks = module.vpc.private_subnets_cidr_blocks
 
-  # Defaults: t4g.nano, fck-nat AMI, on-demand
+  # Defaults: t4g.nano, nat-zero AMI, on-demand
   # Uncomment for spot instances:
   # market_type = "spot"
 

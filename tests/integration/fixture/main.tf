@@ -71,6 +71,11 @@ variable "encrypt_root_volume" {
   default = true
 }
 
+variable "nat_ami_id" {
+  type    = string
+  default = null
+}
+
 module "nat_zero" {
   source = "../../../"
 
@@ -86,6 +91,7 @@ module "nat_zero" {
   instance_type       = var.nat_instance_type
   market_type         = "on-demand"
   encrypt_root_volume = var.encrypt_root_volume
+  ami_id              = var.nat_ami_id
 }
 
 output "vpc_id" {

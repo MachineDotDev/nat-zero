@@ -68,29 +68,22 @@ variable "encrypt_root_volume" {
   description = "Encrypt the root EBS volume."
 }
 
-# AMI configuration
-variable "use_fck_nat_ami" {
-  type        = bool
-  default     = true
-  description = "Use the public fck-nat AMI. Set to false to use a custom AMI."
-}
-
 variable "ami_id" {
   type        = string
   default     = null
   description = "Explicit AMI ID to use (overrides AMI lookup entirely)"
 }
 
-variable "custom_ami_owner" {
+variable "ami_owner_account" {
   type        = string
   default     = null
-  description = "AMI owner account ID when use_fck_nat_ami is false"
+  description = "Owner account ID used when resolving the default nat-zero AMI by name pattern. Override this to use your own shared AMI."
 }
 
-variable "custom_ami_name_pattern" {
+variable "ami_name_pattern" {
   type        = string
   default     = null
-  description = "AMI name pattern when use_fck_nat_ami is false"
+  description = "AMI name pattern used when resolving the default nat-zero AMI. Override this to use your own shared AMI."
 }
 
 variable "nat_tag_key" {

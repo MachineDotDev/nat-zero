@@ -4,7 +4,7 @@
 
 nat-zero is a Terraform module that replaces always-on NAT with on-demand NAT instances. When a workload launches in a private subnet, a NAT instance starts automatically. When the last workload stops, the NAT shuts down and its Elastic IP is released. Idle cost: ~$0.80/month per AZ.
 
-Built on [fck-nat](https://fck-nat.dev/) AMIs. Orchestrated by a single Go Lambda (~55 ms cold start, 29 MB memory). Integration-tested against real AWS infrastructure on every PR.
+Built around a NAT Zero AMI baked in-repo and promoted through a dedicated workflow. Orchestrated by a single Go Lambda (~55 ms cold start, 29 MB memory). Integration-tested against real AWS infrastructure on every PR.
 
 ## Quick start
 
@@ -37,3 +37,7 @@ module "nat_zero" {
 - [Examples](examples.md) — spot instances, custom AMIs, building from source
 - [Terraform Reference](reference.md) — inputs, outputs, resources
 - [Testing](testing.md) — integration test lifecycle and CI
+
+`fck-nat` AMIs are intentionally unsupported here. They discover ENIs via IMDS/AWS calls during bootstrap, which does not match nat-zero's launch-template-owned ENIs and delayed EIP attachment model.
+
+`fck-nat` itself is still a good fit when you want a conventional always-on NAT instance and do not need nat-zero's scale-to-zero lifecycle.

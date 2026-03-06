@@ -64,4 +64,4 @@ Integration tests run in GitHub Actions when the `integration-test` label is add
 
 ## Config Version Replacement
 
-The Lambda tags NAT instances with a `ConfigVersion` hash (AMI + instance type + market type + volume size + encryption). When the config changes and a workload triggers reconciliation, the Lambda terminates the outdated NAT and creates a replacement. The integration test doesn't exercise this path directly, but it's covered by unit tests.
+The Lambda tags NAT instances with a `ConfigVersion` hash (resolved AMI ID + instance type + market type + volume size + encryption). When the config changes and a workload triggers reconciliation, the Lambda terminates the outdated NAT and creates a replacement. The integration suite can now exercise this path by setting `NAT_ZERO_TEST_UPDATED_NAT_AMI_ID` before running `go test`.

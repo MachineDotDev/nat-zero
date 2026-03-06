@@ -11,7 +11,7 @@ resource "aws_launch_template" "nat_launch_template" {
   count         = length(var.availability_zones)
   name          = "${var.name}-${var.availability_zones[count.index]}-launch-template"
   instance_type = var.instance_type
-  image_id      = var.ami_id
+  image_id      = local.effective_ami_id
 
   iam_instance_profile {
     arn = aws_iam_instance_profile.nat_instance_profile.arn
@@ -76,4 +76,11 @@ resource "aws_launch_template" "nat_launch_template" {
     },
     local.common_tags,
   )
+
+  lifecycle {
+    precondition {
+      condition     = local.effective_ami_id != null
+      error_message = "Set ami_id or configure a resolvable AMI source with ami_owner_account and ami_name_pattern."
+    }
+  }
 }

@@ -119,18 +119,11 @@ func TestReconcileScaleUp(t *testing.T) {
 		}
 		mock.DescribeLaunchTemplatesFn = func(ctx context.Context, params *ec2.DescribeLaunchTemplatesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeLaunchTemplatesOutput, error) {
 			return &ec2.DescribeLaunchTemplatesOutput{
-				LaunchTemplates: []ec2types.LaunchTemplate{{LaunchTemplateId: aws.String("lt-123")}},
-			}, nil
-		}
-		mock.DescribeLaunchTemplateVersionsFn = func(ctx context.Context, params *ec2.DescribeLaunchTemplateVersionsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeLaunchTemplateVersionsOutput, error) {
-			return &ec2.DescribeLaunchTemplateVersionsOutput{
-				LaunchTemplateVersions: []ec2types.LaunchTemplateVersion{{
-					LaunchTemplateId: aws.String("lt-123"), VersionNumber: aws.Int64(1),
+				LaunchTemplates: []ec2types.LaunchTemplate{{
+					LaunchTemplateId:    aws.String("lt-123"),
+					LatestVersionNumber: aws.Int64(1),
 				}},
 			}, nil
-		}
-		mock.DescribeImagesFn = func(ctx context.Context, params *ec2.DescribeImagesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeImagesOutput, error) {
-			return &ec2.DescribeImagesOutput{Images: []ec2types.Image{}}, nil
 		}
 		mock.RunInstancesFn = func(ctx context.Context, params *ec2.RunInstancesInput, optFns ...func(*ec2.Options)) (*ec2.RunInstancesOutput, error) {
 			return &ec2.RunInstancesOutput{
@@ -751,18 +744,11 @@ func TestReconcileNATEvent(t *testing.T) {
 		}
 		mock.DescribeLaunchTemplatesFn = func(ctx context.Context, params *ec2.DescribeLaunchTemplatesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeLaunchTemplatesOutput, error) {
 			return &ec2.DescribeLaunchTemplatesOutput{
-				LaunchTemplates: []ec2types.LaunchTemplate{{LaunchTemplateId: aws.String("lt-123")}},
-			}, nil
-		}
-		mock.DescribeLaunchTemplateVersionsFn = func(ctx context.Context, params *ec2.DescribeLaunchTemplateVersionsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeLaunchTemplateVersionsOutput, error) {
-			return &ec2.DescribeLaunchTemplateVersionsOutput{
-				LaunchTemplateVersions: []ec2types.LaunchTemplateVersion{{
-					LaunchTemplateId: aws.String("lt-123"), VersionNumber: aws.Int64(1),
+				LaunchTemplates: []ec2types.LaunchTemplate{{
+					LaunchTemplateId:    aws.String("lt-123"),
+					LatestVersionNumber: aws.Int64(1),
 				}},
 			}, nil
-		}
-		mock.DescribeImagesFn = func(ctx context.Context, params *ec2.DescribeImagesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeImagesOutput, error) {
-			return &ec2.DescribeImagesOutput{Images: []ec2types.Image{}}, nil
 		}
 		mock.RunInstancesFn = func(ctx context.Context, params *ec2.RunInstancesInput, optFns ...func(*ec2.Options)) (*ec2.RunInstancesOutput, error) {
 			return &ec2.RunInstancesOutput{

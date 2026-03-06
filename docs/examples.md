@@ -55,7 +55,7 @@ module "nat_zero" {
   private_route_table_ids     = module.vpc.private_route_table_ids
   private_subnets_cidr_blocks = module.vpc.private_subnets_cidr_blocks
 
-  # Defaults: t4g.nano, fck-nat AMI, on-demand
+  # Defaults: t4g.nano, promoted public nat-zero AMI track, on-demand
   # Uncomment for spot instances:
   # market_type = "spot"
 
@@ -92,7 +92,7 @@ module "nat_zero" {
 
 ## Custom AMI
 
-To use a custom AMI instead of the default fck-nat AMI:
+To use your own NAT Zero-compatible AMI instead of the default public nat-zero AMI:
 
 ```hcl
 module "nat_zero" {
@@ -100,9 +100,8 @@ module "nat_zero" {
 
   # ... required variables ...
 
-  use_fck_nat_ami       = false
-  custom_ami_owner      = "123456789012"
-  custom_ami_name_pattern = "my-nat-ami-*"
+  ami_owner_account = "123456789012"
+  ami_name_pattern  = "my-nat-ami-*"
 }
 ```
 
@@ -117,6 +116,8 @@ module "nat_zero" {
   ami_id = "ami-0123456789abcdef0"
 }
 ```
+
+Custom AMIs must preserve nat-zero's deterministic dual-ENI boot model. `fck-nat` AMIs are not compatible because they query IMDS/AWS during bootstrap to infer ENI attachment, while nat-zero relies on the launch template ENIs being known up front and the EIP being attached later by the reconciler.
 
 ## Disable Root Volume Encryption
 

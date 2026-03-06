@@ -47,10 +47,7 @@ resource "aws_iam_role_policy" "lambda_iam_policy" {
         Effect = "Allow"
         Action = [
           "ec2:DescribeInstances",
-          "ec2:DescribeImages",
           "ec2:DescribeLaunchTemplates",
-          "ec2:DescribeLaunchTemplateVersions",
-          "ec2:DescribeNetworkInterfaces",
           "ec2:DescribeAddresses",
         ]
         Resource = "*"

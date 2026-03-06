@@ -1,6 +1,6 @@
-# First-Party NAT AMI (arm64, AL2023 minimal)
+# NAT Zero AMI (arm64, AL2023 minimal)
 
-This directory contains the Packer build for the nat-zero first-party NAT AMI.
+This directory contains the Packer build for the nat-zero AMI.
 
 ## Supported Flavor
 
@@ -14,6 +14,9 @@ This directory contains the Packer build for the nat-zero first-party NAT AMI.
 - No `aws` CLI calls in bootstrap/runtime NAT scripts
 - No runtime ENI attach/detach or EIP association logic
 - Small, readable bootstrap and NAT config scripts
+- `fck-nat`-style bootstrap discovery is intentionally avoided because nat-zero relies on launch-template-owned ENIs and attaches the EIP later in the reconciliation loop
+- Unencrypted AMI backing snapshot so the image can be made public; the module can still encrypt runtime NAT instance volumes
+- Build-time OS patching via `dnf upgrade --refresh` before the AMI is created
 
 ## Build
 
@@ -33,7 +36,7 @@ The AMI name format is:
 
 - `nat-zero-al2023-minimal-arm64-<timestamp>`
 
-This full AMI name is used as the module default target for deterministic first-party rollout.
+This full AMI name is used as the module default target for deterministic rollout.
 
 ## GitHub Workflow
 
@@ -47,9 +50,9 @@ Workflow: `.github/workflows/nat-images.yml`
   - `source_region` (default `us-east-1`)
   - `run_integration_gate` (default `true`)
 - Behavior:
-  - builds a new first-party AMI with Packer
+  - builds a new nat-zero AMI with Packer
   - copies it to all currently enabled regions in the account (parallel copy with retries)
   - runs integration tests against the new source AMI (gate) before promotion
-  - updates `first_party_ami_name_pattern` (and generated docs) and opens a PR
+- updates `ami_owner_account`, `ami_name_pattern` (and generated docs) and opens a PR
 
 Merge the promotion PR to `main` to let release-please publish a new module release that points to the promoted AMI name.
