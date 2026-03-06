@@ -16,7 +16,7 @@ jobs:
         with:
           go-version-file: cmd/lambda/go.mod
 
-      - uses: hashicorp/setup-packer@v3
+      - uses: hashicorp/setup-packer@1aa358be5cf73883762b302a3a03abd66e75b232 # v3
 
       - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
 

@@ -42,7 +42,7 @@ Full end-to-end test: deploys real AWS infrastructure via Terratest, exercises t
 - **Timeout**: 15 minutes.
 - **Job name**: `integration-test` (required status check for merge).
 - **Optional inputs**:
-  - `nat_ami_id` to force the fixture onto a specific NAT AMI.
+  - `nat_ami_id` to force the fixture onto a specific NAT AMI. If omitted, the workflow resolves the shared us-east-1 test AMI from account `590144423513`.
   - `updated_nat_ami_id` to exercise the AMI replacement path after a second `terraform apply`.
 
 ### Steps
@@ -60,7 +60,7 @@ Manual promotion workflow for the default public nat-zero AMI.
 2. Copy it to every enabled AWS region in the account.
 3. Run two us-east-1 integration gates:
    - direct test of the new AMI
-   - upgrade-path test that reapplies the module with the new AMI and verifies the old NAT is replaced
+   - upgrade-path test that starts from the shared us-east-1 test NAT AMI, reapplies the module with the new AMI, and verifies the old NAT is replaced
 4. Make every copied AMI public.
 5. Open a PR that updates the Terraform defaults (`ami_owner_account`, `ami_name_pattern`) so merge + release-please can publish the new module version.
 
