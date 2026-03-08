@@ -119,6 +119,8 @@ jobs:
       - name: Build AMI
         id: build
         working-directory: ami
+        env:
+          SOURCE_REGION: ${{ needs.resolve-inputs.outputs.source_region }}
         run: |
           rm -f manifest.json
           packer init nat-zero.pkr.hcl
@@ -129,7 +131,11 @@ jobs:
             -var "subnet_id=${{ needs.resolve-inputs.outputs.build_subnet_id }}" \
             nat-zero.pkr.hcl
 
-          source_ami_id="$(jq -er '.builds[-1].artifact_id' manifest.json | awk -F: 'NF == 2 && $2 != "" { print $2 }')"
+          source_ami_id="$(
+            jq -er '.builds[-1].artifact_id' manifest.json |
+              tr ',' '\n' |
+              awk -F: -v source_region="$SOURCE_REGION" '$1 == source_region && $2 != "" { print $2; exit }'
+          )"
           if [ -z "$source_ami_id" ] || [ "$source_ami_id" = "null" ]; then
             echo "failed to determine source AMI ID after packer build" >&2
             exit 1
