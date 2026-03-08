@@ -97,6 +97,7 @@ module "nat_zero" {
   market_type         = "on-demand"
   encrypt_root_volume = var.encrypt_root_volume
   ami_id              = var.nat_ami_id
+  lambda_binary_path  = fileexists("${path.module}/../../.build/lambda.zip") ? abspath("${path.module}/../../.build/lambda.zip") : null
 }
 
 output "vpc_id" {

@@ -106,8 +106,9 @@ Only runs when `release_created == 'true'` (i.e., the push that merges a release
 
 1. Cross-compiles the Go Lambda for `linux/arm64`.
 2. Zips as `lambda.zip`.
-3. **Uploads to the versioned release** (e.g., `v0.1.0`).
-4. **Creates/updates a rolling `nat-zero-lambda-latest` release** with the same zip. This provides a stable URL for the module's default `lambda_binary_url`.
+3. Writes `lambda.zip.base64sha256`, containing the base64-encoded SHA256 for the zip.
+4. **Uploads the zip and checksum to the versioned release** (e.g., `v0.1.0`).
+5. **Creates/updates a rolling `nat-zero-lambda-latest` release** with the same zip and checksum. This provides a stable URL for the module's default `lambda_binary_url` and the matching default checksum URL.
 
 ### Changelog sections
 
@@ -124,16 +125,16 @@ Only runs when `release_created == 'true'` (i.e., the push that merges a release
 
 ### `main` branch ruleset
 
-- **No direct push**: creation, update, deletion, and non-fast-forward all blocked.
 - **PRs required** with:
-  - 1 approving review
+  - 0 required approvals
   - Stale reviews dismissed on push
-  - Last push approval required (reviewer cannot be the person who pushed the last commit)
   - All review threads must be resolved
-  - **Squash merge only**
-- **Required status checks**: `precommit`, `go-test`, `integration-test`
-  - `strict_required_status_checks_policy: false` -- checks that don't run (path filtering / label gating) won't block merge.
-- **Bypass**: Admin role can bypass always.
+- **Required status checks**: `precommit`, `go-test`
+  - strict mode enabled, so required checks must be up to date with `main`
+- **Linear history required**
+- **No force push**
+- **No branch deletion**
+- **Bypass**: Admin role can bypass because `enforce_admins` is disabled.
 
 ### `tags` ruleset
 
@@ -148,7 +149,7 @@ Open PR
   -> precommit runs (always)
   -> go-test runs (if cmd/lambda/** changed)
   -> Add "integration-test" label -> integration tests run against real AWS
-  -> 1 approval + threads resolved
+  -> threads resolved
   -> Squash merge to main
 
 Post-merge to main:
@@ -157,5 +158,5 @@ Post-merge to main:
 
 Merge release PR:
   -> release-please creates GitHub Release + tag
-  -> build-lambda uploads lambda.zip to release + rolling latest
+  -> build-lambda uploads lambda.zip + lambda.zip.base64sha256 to release + rolling latest
 ```

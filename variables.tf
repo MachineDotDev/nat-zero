@@ -136,11 +136,29 @@ variable "log_retention_days" {
 variable "build_lambda_locally" {
   type        = bool
   default     = false
-  description = "Build the Lambda binary from Go source instead of downloading a pre-compiled release. Requires Go and zip installed locally."
+  description = "Build the Lambda binary from Go source during apply instead of downloading a pre-compiled release. This is primarily for local development and may require a second apply after code changes."
+}
+
+variable "lambda_binary_path" {
+  type        = string
+  default     = null
+  description = "Optional path to a pre-built Lambda zip on disk. Use this to build the artifact outside Terraform and avoid apply-time compilation."
 }
 
 variable "lambda_binary_url" {
   type        = string
   default     = "https://github.com/MachineDotDev/nat-zero/releases/download/nat-zero-lambda-latest/lambda.zip"
-  description = "URL to the pre-compiled Go Lambda zip. Updated automatically by CI."
+  description = "URL to the pre-compiled Go Lambda zip. Used when lambda_binary_path is null and build_lambda_locally is false."
+}
+
+variable "lambda_binary_base64sha256" {
+  type        = string
+  default     = null
+  description = "Optional base64-encoded SHA256 of the Lambda zip. Override this for custom artifacts or when you want to avoid fetching the published checksum URL."
+}
+
+variable "lambda_binary_base64sha256_url" {
+  type        = string
+  default     = null
+  description = "Optional URL returning the base64-encoded SHA256 for lambda_binary_url. Defaults to appending .base64sha256 to lambda_binary_url."
 }

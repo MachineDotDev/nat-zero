@@ -17,15 +17,47 @@ resource "time_sleep" "lambda_ready" {
   destroy_duration = var.enable_logging ? "10s" : "0s"
 }
 
-resource "null_resource" "download_lambda" {
-  count = var.build_lambda_locally ? 0 : 1
+locals {
+  downloaded_lambda_zip_path = "${path.module}/.build/lambda.zip"
+  lambda_binary_hash_url     = coalesce(var.lambda_binary_base64sha256_url, "${var.lambda_binary_url}.base64sha256")
+  local_lambda_zip_path      = coalesce(var.lambda_binary_path, local.downloaded_lambda_zip_path)
+  local_lambda_source_hash = var.lambda_binary_path != null ? (
+    coalesce(var.lambda_binary_base64sha256, filebase64sha256(var.lambda_binary_path))
+    ) : (
+    fileexists(local.downloaded_lambda_zip_path) ? filebase64sha256(local.downloaded_lambda_zip_path) : null
+  )
+  downloaded_lambda_source_hash = coalesce(
+    var.lambda_binary_base64sha256,
+    one(data.http.lambda_binary_hash[*].response_body),
+    null,
+  )
+  lambda_source_hash = var.build_lambda_locally ? local.local_lambda_source_hash : trimspace(coalesce(local.downloaded_lambda_source_hash, ""))
+}
 
-  triggers = {
-    url = var.lambda_binary_url
+data "http" "lambda_binary_hash" {
+  count = var.build_lambda_locally || var.lambda_binary_path != null || var.lambda_binary_base64sha256 != null ? 0 : 1
+  url   = local.lambda_binary_hash_url
+
+  request_headers = {
+    Accept = "text/plain"
   }
+}
+
+resource "terraform_data" "download_lambda" {
+  count = var.build_lambda_locally || var.lambda_binary_path != null ? 0 : 1
+
+  triggers_replace = [
+    path.module,
+    var.lambda_binary_url,
+    local.lambda_binary_hash_url,
+    trimspace(coalesce(local.downloaded_lambda_source_hash, "")),
+  ]
 
   provisioner "local-exec" {
-    command = "test -f ${path.module}/.build/lambda.zip || (mkdir -p ${path.module}/.build && curl -sfL -o ${path.module}/.build/lambda.zip ${var.lambda_binary_url})"
+    command = <<-EOT
+      mkdir -p "${path.module}/.build" && \
+      curl -sfL -o "${local.downloaded_lambda_zip_path}" "${var.lambda_binary_url}"
+    EOT
   }
 }
 
@@ -33,8 +65,12 @@ resource "null_resource" "build_lambda" {
   count = var.build_lambda_locally ? 1 : 0
 
   triggers = {
+    module_path = path.module
     source_hash = sha256(join("", [
-      for f in sort(fileset("${path.module}/cmd/lambda", "*.go")) :
+      for f in sort(concat(
+        tolist(fileset("${path.module}/cmd/lambda", "*.go")),
+        ["go.mod", "go.sum"],
+      )) :
       filesha256("${path.module}/cmd/lambda/${f}")
     ]))
   }
@@ -52,12 +88,12 @@ resource "null_resource" "build_lambda" {
 }
 
 resource "aws_lambda_function" "nat_zero" {
-  filename                       = "${path.module}/.build/lambda.zip"
+  filename                       = local.local_lambda_zip_path
   function_name                  = "${var.name}-nat-zero"
   handler                        = "bootstrap"
   role                           = aws_iam_role.lambda_iam_role.arn
   runtime                        = "provided.al2023"
-  source_code_hash               = fileexists("${path.module}/.build/lambda.zip") ? filebase64sha256("${path.module}/.build/lambda.zip") : null
+  source_code_hash               = local.lambda_source_hash
   architectures                  = ["arm64"]
   timeout                        = 90
   reserved_concurrent_executions = 1
@@ -81,7 +117,14 @@ resource "aws_lambda_function" "nat_zero" {
     }
   }
 
-  depends_on = [time_sleep.lambda_ready, null_resource.download_lambda, null_resource.build_lambda]
+  lifecycle {
+    precondition {
+      condition     = !(var.build_lambda_locally && var.lambda_binary_path != null)
+      error_message = "build_lambda_locally and lambda_binary_path cannot be used together."
+    }
+  }
+
+  depends_on = [time_sleep.lambda_ready, terraform_data.download_lambda, null_resource.build_lambda]
 }
 
 resource "aws_lambda_function_event_invoke_config" "nat_zero_invoke_config" {

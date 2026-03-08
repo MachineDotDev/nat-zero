@@ -135,7 +135,7 @@ module "nat_zero" {
 
 ## Building Lambda Locally
 
-For development or if you want to build from source:
+For development or if you want to build from source during `terraform apply`:
 
 ```hcl
 module "nat_zero" {
@@ -147,4 +147,18 @@ module "nat_zero" {
 }
 ```
 
-Requires Go and `zip` installed locally.
+Requires Go and `zip` installed locally. This is a non-standard path and may require a second apply after code changes.
+
+## Using a Pre-built Local Lambda Zip
+
+For CI or local testing, it is cleaner to build the zip outside Terraform and pass it in directly:
+
+```hcl
+module "nat_zero" {
+  source = "github.com/MachineDotDev/nat-zero"
+
+  # ... required variables ...
+
+  lambda_binary_path = "${path.module}/.build/lambda.zip"
+}
+```
