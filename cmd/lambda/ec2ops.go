@@ -445,8 +445,21 @@ func (h *Handler) cleanupAll(ctx context.Context) {
 // before termination completes, Terraform may try to delete still-attached ENIs.
 func (h *Handler) waitForTermination(ctx context.Context, instanceIDs []string) {
 	defer timed("wait_for_termination")()
-	for attempt := 0; attempt < 60; attempt++ {
-		time.Sleep(2 * time.Second)
+	const (
+		pollInterval   = 2 * time.Second
+		maxAttempts    = 90
+		deadlineBuffer = 5 * time.Second
+	)
+
+	deadline, hasDeadline := ctx.Deadline()
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		if hasDeadline && time.Until(deadline) <= deadlineBuffer {
+			log.Printf("Stopping termination wait with Lambda deadline %s away", time.Until(deadline).Round(time.Second))
+			return
+		}
+		if attempt > 0 {
+			time.Sleep(pollInterval)
+		}
 		resp, err := h.EC2.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
 			InstanceIds: instanceIDs,
 			Filters: []ec2types.Filter{

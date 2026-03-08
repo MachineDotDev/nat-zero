@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/cloudwatchevents"
 	"github.com/aws/aws-sdk-go/service/cloudwatchlogs"
@@ -378,13 +379,9 @@ func TestNatZero(t *testing.T) {
 		waitForInstanceTerminated(t, ec2Client, oldNatID)
 		record("Wait for outdated NAT terminated", time.Since(waitTermStart))
 
-		invokeCreateStart := time.Now()
-		invokeLambda(t, lambdaClient, lambdaName, map[string]string{
-			"instance_id": activeWorkloadID,
-			"state":       "running",
-		})
-		record("Lambda invoke (AMI update create)", time.Since(invokeCreateStart))
-
+		// The old NAT termination emits the next EventBridge signal. That
+		// should drive creation of the replacement NAT without another manual
+		// invoke, which would race the single-concurrency reconciler.
 		replacementStart := time.Now()
 		replacementNat := waitForRunningNATWithEIP(t, ec2Client, vpcID, "replacement NAT running with EIP")
 		record("Wait for replacement NAT running with EIP", time.Since(replacementStart))
@@ -503,10 +500,21 @@ func TestNatZero(t *testing.T) {
 func invokeLambda(t *testing.T, client *lambda.Lambda, funcName string, payload map[string]string) {
 	t.Helper()
 	body, _ := json.Marshal(payload)
-	out, err := client.Invoke(&lambda.InvokeInput{
-		FunctionName: aws.String(funcName),
-		Payload:      body,
-		LogType:      aws.String("Tail"),
+	var out *lambda.InvokeOutput
+	_, err := retry.DoWithRetryE(t, "lambda invoke", 20, 3*time.Second, func() (string, error) {
+		var invokeErr error
+		out, invokeErr = client.Invoke(&lambda.InvokeInput{
+			FunctionName: aws.String(funcName),
+			Payload:      body,
+			LogType:      aws.String("Tail"),
+		})
+		if invokeErr == nil {
+			return "OK", nil
+		}
+		if isLambdaConcurrencyThrottle(invokeErr) {
+			return "", invokeErr
+		}
+		return "", retry.FatalError{Underlying: invokeErr}
 	})
 	require.NoError(t, err, "Lambda invocation failed")
 	if out.FunctionError != nil {
@@ -525,6 +533,17 @@ func invokeLambda(t *testing.T, client *lambda.Lambda, funcName string, payload 
 	}
 
 	t.Logf("Lambda invoked: %v", payload)
+}
+
+func isLambdaConcurrencyThrottle(err error) bool {
+	awsErr, ok := err.(awserr.Error)
+	if !ok {
+		return false
+	}
+	if awsErr.Code() != "TooManyRequestsException" {
+		return false
+	}
+	return strings.Contains(awsErr.Message(), "ReservedFunctionConcurrentInvocationLimitExceeded")
 }
 
 // dumpLambdaLogs prints recent Lambda CloudWatch log events for post-mortem debugging.
