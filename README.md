@@ -82,6 +82,23 @@ module "nat_zero" {
 
 See [Examples](docs/examples.md) for spot instances, custom AMIs, and building from source.
 
+## Lambda Code Paths
+
+The module intentionally supports exactly three ways to supply the Lambda binary:
+
+1. Default release artifact
+   - Normal path for end users
+   - The module downloads the versioned `lambda.zip` and reads the matching `lambda.zip.base64sha256` from the tagged GitHub release
+   - The checksum file exists so Terraform can know the Lambda code hash during `plan`, before it downloads the zip during `apply`
+   - When a new release publishes a different checksum, Terraform sees the `source_code_hash` change during `plan` and knows the Lambda must be updated
+2. Pre-built local zip via `lambda_binary_path`
+   - Best for CI, unreleased branch testing, or custom binaries
+   - Terraform hashes the local file during plan
+3. Apply-time build via `build_lambda_locally = true`
+   - Local development only
+   - Requires Go and `zip`
+   - May require a second apply after Lambda code changes
+
 ## Performance
 
 | Scenario | Time to connectivity |
@@ -112,6 +129,7 @@ See [Performance](docs/performance.md) for detailed timings and cost breakdowns.
 |------|---------|
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.4 |
 | <a name="requirement_aws"></a> [aws](#requirement\_aws) | >= 5.0 |
+| <a name="requirement_http"></a> [http](#requirement\_http) | >= 3.0 |
 | <a name="requirement_null"></a> [null](#requirement\_null) | >= 3.0 |
 | <a name="requirement_time"></a> [time](#requirement\_time) | >= 0.9 |
 
@@ -145,6 +163,7 @@ No modules.
 | [time_sleep.eventbridge_propagation](https://registry.terraform.io/providers/hashicorp/time/latest/docs/resources/sleep) | resource |
 | [time_sleep.lambda_ready](https://registry.terraform.io/providers/hashicorp/time/latest/docs/resources/sleep) | resource |
 | [aws_ami.nat](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/ami) | data source |
+| [http_http.lambda_binary_hash](https://registry.terraform.io/providers/hashicorp/http/latest/docs/data-sources/http) | data source |
 
 ## Inputs
 

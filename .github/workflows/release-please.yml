@@ -43,28 +43,9 @@ jobs:
         run: |
           TZ=UTC touch -t 198001010000 bootstrap
           zip -q -X lambda.zip bootstrap
-
-      - name: Verify committed Lambda hash
-        run: |
-          expected_version=$(jq -r '.version' ../../.lambda-release.json)
-          actual_version=$(jq -r '."."' ../../.release-please-manifest.json)
-          test "$expected_version" = "$actual_version"
-
-          expected_hash=$(jq -r '.base64sha256' ../../.lambda-release.json)
-          actual_hash=$(openssl dgst -sha256 -binary lambda.zip | openssl base64 -A)
-          test "$expected_hash" = "$actual_hash"
+          openssl dgst -sha256 -binary lambda.zip | openssl base64 -A > lambda.zip.base64sha256
 
       - name: Upload to versioned release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ needs.release-please.outputs.tag_name }}" lambda.zip --clobber
-
-      - name: Update rolling latest release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release create nat-zero-lambda-latest \
-            --title "nat-zero Lambda (latest)" \
-            --notes "Auto-built Go Lambda binary from ${{ needs.release-please.outputs.tag_name }}" \
-            --latest=false 2>/dev/null || true
-          gh release upload nat-zero-lambda-latest lambda.zip --clobber
+        run: gh release upload "${{ needs.release-please.outputs.tag_name }}" lambda.zip lambda.zip.base64sha256 --clobber

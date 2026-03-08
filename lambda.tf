@@ -18,27 +18,32 @@ resource "time_sleep" "lambda_ready" {
 }
 
 locals {
-  lambda_release_metadata            = jsondecode(file("${path.module}/.lambda-release.json"))
-  module_release_version             = jsondecode(file("${path.module}/.release-please-manifest.json"))["."]
-  default_lambda_binary_url          = "https://github.com/MachineDotDev/nat-zero/releases/download/v${local.module_release_version}/lambda.zip"
-  default_lambda_binary_base64sha256 = local.lambda_release_metadata.base64sha256
-  downloaded_lambda_zip_path         = "${path.module}/.build/lambda.zip"
-  local_lambda_zip_path              = coalesce(var.lambda_binary_path, local.downloaded_lambda_zip_path)
+  module_release_version     = jsondecode(file("${path.module}/.release-please-manifest.json"))["."]
+  default_lambda_binary_url  = "https://github.com/MachineDotDev/nat-zero/releases/download/v${local.module_release_version}/lambda.zip"
+  lambda_binary_hash_url     = "${local.default_lambda_binary_url}.base64sha256"
+  downloaded_lambda_zip_path = "${path.module}/.build/lambda.zip"
+  local_lambda_zip_path      = coalesce(var.lambda_binary_path, local.downloaded_lambda_zip_path)
   local_lambda_source_hash = var.lambda_binary_path != null ? (
     filebase64sha256(var.lambda_binary_path)
     ) : (
     fileexists(local.downloaded_lambda_zip_path) ? filebase64sha256(local.downloaded_lambda_zip_path) : null
   )
-  lambda_source_hash = var.build_lambda_locally || var.lambda_binary_path != null ? local.local_lambda_source_hash : local.default_lambda_binary_base64sha256
+  downloaded_lambda_source_hash = one(data.http.lambda_binary_hash[*].response_body)
+  lambda_source_hash            = var.build_lambda_locally || var.lambda_binary_path != null ? local.local_lambda_source_hash : trimspace(local.downloaded_lambda_source_hash)
+}
+
+data "http" "lambda_binary_hash" {
+  count = var.build_lambda_locally || var.lambda_binary_path != null ? 0 : 1
+  url   = local.lambda_binary_hash_url
 }
 
 resource "terraform_data" "download_lambda" {
   count = var.build_lambda_locally || var.lambda_binary_path != null ? 0 : 1
 
   triggers_replace = [
-    path.module,
     local.default_lambda_binary_url,
-    local.default_lambda_binary_base64sha256,
+    local.lambda_binary_hash_url,
+    trimspace(local.downloaded_lambda_source_hash),
   ]
 
   provisioner "local-exec" {
@@ -53,7 +58,6 @@ resource "null_resource" "build_lambda" {
   count = var.build_lambda_locally ? 1 : 0
 
   triggers = {
-    module_path = path.module
     source_hash = sha256(join("", [
       for f in sort(concat(
         tolist(fileset("${path.module}/cmd/lambda", "*.go")),
@@ -110,11 +114,6 @@ resource "aws_lambda_function" "nat_zero" {
     precondition {
       condition     = !(var.build_lambda_locally && var.lambda_binary_path != null)
       error_message = "build_lambda_locally and lambda_binary_path cannot be used together."
-    }
-
-    precondition {
-      condition     = var.build_lambda_locally || var.lambda_binary_path != null || local.lambda_release_metadata.version == local.module_release_version
-      error_message = ".lambda-release.json must match .release-please-manifest.json when using the bundled Lambda release artifact."
     }
   }
 

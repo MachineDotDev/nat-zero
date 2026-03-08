@@ -133,9 +133,18 @@ module "nat_zero" {
 }
 ```
 
+## Lambda Code Paths
+
+This repo intentionally supports exactly three Lambda code paths:
+
+1. Default release path: do nothing extra. The module downloads the versioned `lambda.zip` and `lambda.zip.base64sha256` that match the tagged module release.
+   The checksum file exists so Terraform can know `source_code_hash` during `plan`, before it downloads the zip during `apply`. When the published checksum changes, Terraform can see the upstream Lambda code change in the plan.
+2. Pre-built local zip: pass `lambda_binary_path` to test an unreleased branch or supply your own artifact.
+3. Build during apply: set `build_lambda_locally = true` for local development only.
+
 ## Building Lambda Locally
 
-For development or if you want to build from source during `terraform apply`:
+For development only, or if you explicitly want Terraform to build from source during `terraform apply`:
 
 ```hcl
 module "nat_zero" {
@@ -151,7 +160,7 @@ Requires Go and `zip` installed locally. This is a non-standard path and may req
 
 ## Using a Pre-built Local Lambda Zip
 
-For CI or local testing, it is cleaner to build the zip outside Terraform and pass it in directly:
+For CI, branch testing, or if you want plan-time Lambda diffs without waiting for a release, build the zip outside Terraform and pass it in directly:
 
 ```hcl
 module "nat_zero" {
@@ -163,4 +172,4 @@ module "nat_zero" {
 }
 ```
 
-This is also the right way to test an unreleased branch when the branch includes Lambda code changes. The default downloaded Lambda zip is pinned to the latest tagged module release.
+This is the right way to test an unreleased branch when the branch includes Lambda code changes. The default downloaded Lambda zip is pinned to the latest tagged module release.

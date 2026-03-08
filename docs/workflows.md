@@ -100,31 +100,16 @@ Runs `googleapis/release-please-action@v4` with:
    - Creates a **GitHub Release** with a version tag (e.g., `v0.1.0`).
    - Sets output `release_created=true` and `tag_name=v0.1.0`.
 
-## Prepare Release Lambda (`release-please-lambda.yml`)
-
-Runs on release-please PRs before merge.
-
-1. Checks out the `release-please--...` branch.
-2. Builds a deterministic `linux/arm64` Lambda zip from the PR contents.
-3. Computes its base64 SHA256.
-4. Updates `.lambda-release.json` with the release version from `.release-please-manifest.json` and the matching hash.
-5. Commits that metadata back onto the release PR branch if it changed.
-
-This keeps the module default simple at runtime:
-
-- Terraform downloads a versioned `lambda.zip` release asset.
-- Terraform reads the matching committed hash from `.lambda-release.json`.
-- No checksum download is needed during `terraform plan`.
-
 ### Job 2: `build-lambda`
 
 Only runs when `release_created == 'true'` (i.e., the push that merges a release PR).
 
 1. Cross-compiles the Go Lambda for `linux/arm64`.
 2. Creates a deterministic `lambda.zip`.
-3. Verifies the built zip matches the committed metadata in `.lambda-release.json`.
-4. **Uploads the zip to the versioned release** (e.g., `v0.1.0`).
-5. **Creates/updates a rolling `nat-zero-lambda-latest` release** with the same zip for convenience, but the module default pins to the versioned release asset that matches the tagged module version.
+3. Writes `lambda.zip.base64sha256`, containing the base64-encoded SHA256 for the zip.
+4. **Uploads the zip and checksum to the versioned release** (e.g., `v0.1.0`).
+
+That is the full release artifact flow. There is no second workflow that edits the release PR, and there is no rolling "latest" Lambda artifact to keep in sync.
 
 ### Changelog sections
 
@@ -174,5 +159,22 @@ Post-merge to main:
 
 Merge release PR:
   -> release-please creates GitHub Release + tag
-  -> build-lambda uploads lambda.zip to release + rolling latest
+  -> build-lambda uploads lambda.zip + lambda.zip.base64sha256 to that versioned release
 ```
+
+## Lambda Code Paths
+
+The module intentionally supports exactly three ways to supply Lambda code:
+
+1. Default release artifact
+   - Best for normal users
+   - Terraform downloads the versioned `lambda.zip` and reads the matching `lambda.zip.base64sha256`
+   - The checksum file lets Terraform know `source_code_hash` during `plan`, before the zip is downloaded during `apply`
+   - A changed published checksum shows up as a Lambda code change in `terraform plan`
+2. Pre-built local zip via `lambda_binary_path`
+   - Best for CI, branch testing, or custom unreleased binaries
+   - Terraform hashes the local file during plan
+3. Apply-time build via `build_lambda_locally = true`
+   - Best for local development only
+   - Requires Go and `zip`
+   - May require a second apply after Lambda code changes
