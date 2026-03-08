@@ -31,7 +31,6 @@ permissions:
   pull-requests: write
 
 env:
-  TEST_NAT_AMI_ID: ${{ vars.NAT_ZERO_TEST_AMI_ID }}
   PACKER_REGIONS_FILE: ami/nat-zero-private-all-regions.pkrvars.hcl
 
 jobs:
@@ -179,97 +178,22 @@ jobs:
 
           echo "test_ami_id=$test_ami_id" >> "$GITHUB_OUTPUT"
 
-  integration-new-ami:
+  integration:
     if: ${{ needs.resolve-inputs.outputs.should_run == 'true' && needs.resolve-inputs.outputs.run_integration_gate == 'true' }}
     needs:
       - resolve-inputs
       - build-and-copy
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    environment: integration
-    env:
-      NAT_ZERO_TEST_NAT_AMI_ID: ${{ needs.build-and-copy.outputs.test_ami_id }}
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
-        with:
-          go-version-file: tests/integration/go.mod
-
-      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
-        with:
-          terraform_wrapper: false
-
-      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
-        with:
-          role-to-assume: ${{ secrets.INTEGRATION_ROLE_ARN }}
-          aws-region: us-east-1
-
-      - name: Build Lambda binary
-        working-directory: cmd/lambda
-        run: |
-          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -tags lambda.norpc -ldflags='-s -w' -o bootstrap
-          zip lambda.zip bootstrap
-          mkdir -p ../../.build
-          cp lambda.zip ../../.build/lambda.zip
-
-      - name: Test new AMI directly
-        working-directory: tests/integration
-        run: go test -v -timeout 10m -count=1
-
-  integration-ami-upgrade:
-    if: ${{ needs.resolve-inputs.outputs.should_run == 'true' && needs.resolve-inputs.outputs.run_integration_gate == 'true' }}
-    needs:
-      - resolve-inputs
-      - build-and-copy
-      - integration-new-ami
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    environment: integration
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
-        with:
-          go-version-file: tests/integration/go.mod
-
-      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
-        with:
-          terraform_wrapper: false
-
-      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
-        with:
-          role-to-assume: ${{ secrets.INTEGRATION_ROLE_ARN }}
-          aws-region: us-east-1
-
-      - name: Resolve baseline NAT AMI
-        run: |
-          if [ -z "$TEST_NAT_AMI_ID" ]; then
-            echo "baseline integration NAT AMI is not configured" >&2
-            exit 1
-          fi
-
-          echo "NAT_ZERO_TEST_NAT_AMI_ID=$TEST_NAT_AMI_ID" >> "$GITHUB_ENV"
-          echo "NAT_ZERO_TEST_UPDATED_NAT_AMI_ID=${{ needs.build-and-copy.outputs.test_ami_id }}" >> "$GITHUB_ENV"
-
-      - name: Build Lambda binary
-        working-directory: cmd/lambda
-        run: |
-          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -tags lambda.norpc -ldflags='-s -w' -o bootstrap
-          zip lambda.zip bootstrap
-          mkdir -p ../../.build
-          cp lambda.zip ../../.build/lambda.zip
-
-      - name: Test AMI upgrade path
-        working-directory: tests/integration
-        run: go test -v -timeout 15m -count=1
+    uses: ./.github/workflows/integration-tests.yml
+    secrets: inherit
+    with:
+      nat_ami_id: ${{ vars.NAT_ZERO_TEST_AMI_ID }}
+      updated_nat_ami_id: ${{ needs.build-and-copy.outputs.test_ami_id }}
 
   publish-public:
     needs:
       - resolve-inputs
       - build-and-copy
-      - integration-new-ami
-      - integration-ami-upgrade
+      - integration
     if: >-
       always() &&
       needs.resolve-inputs.outputs.should_run == 'true' &&
@@ -277,7 +201,7 @@ jobs:
       needs.build-and-copy.result == 'success' &&
       (
         needs.resolve-inputs.outputs.run_integration_gate != 'true' ||
-        (needs.integration-new-ami.result == 'success' && needs.integration-ami-upgrade.result == 'success')
+        needs.integration.result == 'success'
       )
     runs-on: ubuntu-latest
     environment: ami-build

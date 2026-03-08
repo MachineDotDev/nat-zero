@@ -16,7 +16,7 @@ Integration tests require AWS credentials with permissions to manage EC2, IAM, L
 
 ## Integration Test Lifecycle
 
-The test uses [Terratest](https://terratest.gruntwork.io/) with a single `terraform apply` / `destroy` cycle and four phases:
+The test uses [Terratest](https://terratest.gruntwork.io/) with a single `terraform apply` / `destroy` cycle and five phases. Each run uses a unique `nat-test-*` module name so EventBridge, Lambda, and IAM resources do not collide across reruns.
 
 ### Phase 1: NAT Creation and Connectivity
 
@@ -41,14 +41,21 @@ The test uses [Terratest](https://terratest.gruntwork.io/) with a single `terraf
 3. Wait for NAT running with new EIP
 4. Verify connectivity
 
-### Phase 4: Cleanup Action
+### Phase 4: AMI Replacement
+
+1. Reapply the fixture with `NAT_ZERO_TEST_UPDATED_NAT_AMI_ID`
+2. Trigger reconciliation while a workload is active
+3. Verify the old NAT instance is terminated
+4. Verify the replacement NAT comes up on the new AMI and handles egress correctly
+
+### Phase 5: Cleanup Action
 
 1. Invoke Lambda with `{action: "cleanup"}`
 2. Verify all NAT instances terminated and EIPs released
 
 ### Teardown
 
-`terraform destroy` removes all Terraform-managed resources. The cleanup action (Phase 4) ensures Lambda-created NAT instances are terminated first, so ENI deletion succeeds.
+`terraform destroy` removes all Terraform-managed resources. The cleanup action (Phase 5) ensures Lambda-created NAT instances are terminated first, so ENI deletion succeeds.
 
 ## CI
 

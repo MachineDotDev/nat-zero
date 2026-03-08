@@ -76,10 +76,15 @@ variable "nat_ami_id" {
   default = null
 }
 
+variable "name" {
+  type    = string
+  default = "nat-test"
+}
+
 module "nat_zero" {
   source = "../../../"
 
-  name               = "nat-test"
+  name               = var.name
   vpc_id             = data.aws_vpc.default.id
   availability_zones = [data.aws_subnet.public.availability_zone]
   public_subnets     = [data.aws_subnet.public.id]

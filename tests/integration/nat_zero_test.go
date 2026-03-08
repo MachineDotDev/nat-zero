@@ -61,6 +61,7 @@ type phase struct {
 // connectivity, scale-down, restart, cleanup action, and terraform destroy.
 func TestNatZero(t *testing.T) {
 	runID := fmt.Sprintf("tt-%d", time.Now().Unix())
+	moduleName := fmt.Sprintf("nat-test-%s", runID)
 	sess := session.Must(session.NewSession(&aws.Config{Region: aws.String(awsRegion)}))
 	ec2Client := ec2.New(sess)
 	iamClient := iam.New(sess)
@@ -116,7 +117,10 @@ func TestNatZero(t *testing.T) {
 
 	initialNatAMI := strings.TrimSpace(os.Getenv("NAT_ZERO_TEST_NAT_AMI_ID"))
 	updatedNatAMI := strings.TrimSpace(os.Getenv("NAT_ZERO_TEST_UPDATED_NAT_AMI_ID"))
-	tfVars := map[string]interface{}{}
+	tfVars := map[string]interface{}{
+		"name": moduleName,
+	}
+	t.Logf("Integration module name: %s", moduleName)
 	if initialNatAMI != "" {
 		tfVars["nat_ami_id"] = initialNatAMI
 		t.Logf("Initial NAT AMI override: %s", initialNatAMI)
@@ -951,13 +955,25 @@ func TestNoOrphanedResources(t *testing.T) {
 			return found
 		}},
 		{"Lambda", func() []string {
-			_, err := lambdaClient.GetFunction(&lambda.GetFunctionInput{
-				FunctionName: aws.String(testPrefix + "-nat-zero"),
-			})
-			if err == nil {
-				return []string{"Lambda nat-test-nat-zero"}
+			var found []string
+			var marker *string
+			for {
+				out, err := lambdaClient.ListFunctions(&lambda.ListFunctionsInput{Marker: marker})
+				if err != nil {
+					return nil
+				}
+				for _, fn := range out.Functions {
+					name := aws.StringValue(fn.FunctionName)
+					if strings.HasPrefix(name, testPrefix) {
+						found = append(found, fmt.Sprintf("Lambda %s", name))
+					}
+				}
+				if out.NextMarker == nil || aws.StringValue(out.NextMarker) == "" {
+					break
+				}
+				marker = out.NextMarker
 			}
-			return nil
+			return found
 		}},
 		{"LogGroups", func() []string {
 			out, err := cwClient.DescribeLogGroups(&cloudwatchlogs.DescribeLogGroupsInput{
