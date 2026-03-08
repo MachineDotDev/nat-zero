@@ -99,6 +99,16 @@ The module intentionally supports exactly three ways to supply the Lambda binary
    - Requires Go and `zip`
    - May require a second apply after Lambda code changes
 
+## Recommended Usage
+
+| Audience | Recommended module ref | Recommended Lambda path | Why |
+|----------|------------------------|-------------------------|-----|
+| Normal end users | Release tag such as `?ref=v0.4.0` | Default release artifact | Stable module code, stable versioned Lambda artifact, and clean plan/apply behavior |
+| CI, branch testing, unreleased validation | Branch or commit ref | `lambda_binary_path` | Lets Terraform see Lambda code changes during plan before the branch has been released |
+| Local module development | Working tree | `build_lambda_locally = true` | Fastest iteration loop while changing Go code inside this repo |
+
+`ref=main` is suitable for development, but it is not the stable consumption path for end users. If `main` has unreleased Go changes, the default Lambda artifact still comes from the latest tagged release until a new release is cut.
+
 ## Performance
 
 | Scenario | Time to connectivity |

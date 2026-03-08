@@ -34,7 +34,7 @@ module "nat_zero" {
 
 - [Architecture](architecture.md) — reconciliation model, decision matrix, event flows
 - [Performance](performance.md) — startup latency, Lambda execution times, cost breakdowns
-- [Examples](examples.md) — spot instances, custom AMIs, building from source
+- [Examples](examples.md) — spot instances, custom AMIs, Lambda code paths, recommended usage by audience
 - [Terraform Reference](reference.md) — inputs, outputs, resources
 - [Testing](testing.md) — integration test lifecycle and CI
 
