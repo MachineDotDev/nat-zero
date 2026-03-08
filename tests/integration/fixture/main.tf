@@ -96,8 +96,13 @@ module "nat_zero" {
   instance_type       = var.nat_instance_type
   market_type         = "on-demand"
   encrypt_root_volume = var.encrypt_root_volume
-  ami_id              = var.nat_ami_id
-  lambda_binary_path  = fileexists("${path.module}/../../.build/lambda.zip") ? abspath("${path.module}/../../.build/lambda.zip") : null
+
+  # Test-only overrides:
+  # - ami_id lets the integration suite force a specific baseline or upgraded NAT AMI.
+  # - lambda_binary_path lets branch tests exercise unreleased Lambda code.
+  # Normal module consumers should omit both and use the published defaults.
+  ami_id             = var.nat_ami_id
+  lambda_binary_path = fileexists("${path.module}/../../.build/lambda.zip") ? abspath("${path.module}/../../.build/lambda.zip") : null
 }
 
 output "vpc_id" {

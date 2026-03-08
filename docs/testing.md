@@ -65,6 +65,7 @@ Integration tests run in GitHub Actions when the `integration-test` label is add
 - Timeout: 15 minutes
 - Region: us-east-1
 - Default NAT AMI: shared private test nat-zero AMI supplied via the GitHub Actions variable `NAT_ZERO_TEST_AMI_ID` unless `nat_ami_id` is supplied explicitly
+- These are integration-fixture overrides only. Normal module consumers should not set `nat_ami_id`; the module defaults to the published nat-zero AMI track.
 
 ## Orphan Detection
 

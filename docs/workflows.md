@@ -42,8 +42,10 @@ Full end-to-end test: deploys real AWS infrastructure via Terratest, exercises t
 - **Timeout**: 15 minutes.
 - **Job name**: `integration-test` (required status check for merge).
 - **Optional inputs**:
-  - `nat_ami_id` to force the fixture onto a specific NAT AMI. If omitted, the workflow uses the shared private test AMI from the GitHub Actions variable `NAT_ZERO_TEST_AMI_ID`.
+  - `nat_ami_id` to force the integration fixture onto a specific NAT AMI. If omitted, the workflow uses the shared private test AMI from the GitHub Actions variable `NAT_ZERO_TEST_AMI_ID`.
   - `updated_nat_ami_id` to exercise the AMI replacement path after a second `terraform apply`.
+
+These inputs are test-only fixture controls. Normal module consumers should omit them and use the published nat-zero AMI defaults.
 
 ### Steps
 
