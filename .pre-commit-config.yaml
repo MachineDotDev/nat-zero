@@ -42,13 +42,13 @@ repos:
       - id: packer-fmt
         name: packer fmt
         language: system
-        entry: bash -c 'cd ami && packer fmt -check -diff nat-zero.pkr.hcl'
+        entry: bash -c 'cd ami && packer fmt -check -diff .'
         files: '^ami/.*\.(pkr\.hcl|hcl)$'
         pass_filenames: false
       - id: packer-validate
         name: packer validate
         language: system
-        entry: bash -c 'cd ami && packer init nat-zero.pkr.hcl >/dev/null && packer validate -var "subnet_id=subnet-00000000000000000" nat-zero.pkr.hcl'
+        entry: bash -c 'tmp="$(mktemp).pkrvars.hcl" && trap '\''rm -f "$tmp"'\'' EXIT && bash scripts/render_packer_ami_regions.sh ami/nat-zero-private-all-regions.pkrvars.hcl us-east-1 "$tmp" && cd ami && packer init nat-zero.pkr.hcl >/dev/null && packer validate -var-file "$tmp" -var "subnet_id=subnet-00000000000000000" nat-zero.pkr.hcl'
         files: '^ami/.*$'
         pass_filenames: false
   - repo: https://github.com/zricethezav/gitleaks

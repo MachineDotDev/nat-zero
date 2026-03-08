@@ -29,6 +29,7 @@ permissions:
 
 env:
   TEST_NAT_AMI_ID: ${{ vars.NAT_ZERO_TEST_AMI_ID }}
+  PACKER_REGIONS_FILE: ami/nat-zero-private-all-regions.pkrvars.hcl
 
 jobs:
   build-and-copy:
@@ -39,7 +40,6 @@ jobs:
       owner_account_id: ${{ steps.metadata.outputs.owner_account_id }}
       source_ami_id: ${{ steps.build.outputs.source_ami_id }}
       test_ami_id: ${{ steps.test-ami.outputs.test_ami_id }}
-      regions_json: ${{ steps.regions.outputs.regions_json }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -50,6 +50,16 @@ jobs:
           role-to-assume: ${{ secrets.AMI_BUILD_ROLE_ARN }}
           aws-region: ${{ inputs.source_region }}
 
+      - name: Prepare Packer copy regions
+        id: regions
+        run: |
+          bash scripts/render_packer_ami_regions.sh \
+            "$PACKER_REGIONS_FILE" \
+            "${{ inputs.source_region }}" \
+            "$RUNNER_TEMP/nat-zero-copy-regions.pkrvars.hcl"
+
+          echo "var_file=$RUNNER_TEMP/nat-zero-copy-regions.pkrvars.hcl" >> "$GITHUB_OUTPUT"
+
       - name: Build AMI
         id: build
         working-directory: ami
@@ -58,13 +68,14 @@ jobs:
           packer init nat-zero.pkr.hcl
           packer build \
             -color=false \
+            -var-file "${{ steps.regions.outputs.var_file }}" \
             -var "region=${{ inputs.source_region }}" \
             -var "subnet_id=${{ inputs.build_subnet_id }}" \
             nat-zero.pkr.hcl
 
-          source_ami_id="$(jq -r '.builds[-1].artifact_id' manifest.json | awk -F: '{print $2}')"
+          source_ami_id="$(jq -er '.builds[-1].artifact_id' manifest.json | awk -F: 'NF == 2 && $2 != "" { print $2 }')"
           if [ -z "$source_ami_id" ] || [ "$source_ami_id" = "null" ]; then
-            echo "failed to determine source AMI ID from ami/manifest.json" >&2
+            echo "failed to determine source AMI ID after packer build" >&2
             exit 1
           fi
 
@@ -80,71 +91,6 @@ jobs:
 
           echo "owner_account_id=$owner_account_id" >> "$GITHUB_OUTPUT"
           echo "ami_name=$ami_name" >> "$GITHUB_OUTPUT"
-
-      - name: Resolve enabled regions
-        id: regions
-        run: |
-          regions_json="$(aws ec2 describe-regions --all-regions --query "Regions[?OptInStatus=='opt-in-not-required' || OptInStatus=='opted-in'].RegionName" --output json | jq -c 'sort')"
-          echo "regions_json=$regions_json" >> "$GITHUB_OUTPUT"
-
-      - name: Copy AMI to enabled regions
-        env:
-          AMI_NAME: ${{ steps.metadata.outputs.ami_name }}
-          REGIONS_JSON: ${{ steps.regions.outputs.regions_json }}
-          SOURCE_AMI_ID: ${{ steps.build.outputs.source_ami_id }}
-          SOURCE_REGION: ${{ inputs.source_region }}
-        run: |
-          copy_region() {
-            local region="$1"
-            local attempt
-            local err_file
-            local image_id
-
-            err_file="$(mktemp)"
-            trap 'rm -f "$err_file"' RETURN
-
-            for attempt in 1 2 3 4 5; do
-              image_id="$(aws ec2 copy-image \
-                --region "$region" \
-                --source-region "$SOURCE_REGION" \
-                --source-image-id "$SOURCE_AMI_ID" \
-                --name "$AMI_NAME" \
-                --description "nat-zero AMI copied from $SOURCE_REGION" \
-                --query 'ImageId' \
-                --output text 2>"$err_file")" && break
-              sleep $((attempt * 5))
-            done
-
-            if [ -z "${image_id:-}" ] || [ "$image_id" = "None" ]; then
-              cat "$err_file" >&2 || true
-              return 1
-            fi
-
-            aws ec2 wait image-available --region "$region" --image-ids "$image_id"
-          }
-
-          pids=()
-
-          while IFS= read -r region; do
-            if [ "$region" = "$SOURCE_REGION" ]; then
-              continue
-            fi
-
-            (
-              set -euo pipefail
-              copy_region "$region"
-            ) &
-            pids+=("$!")
-          done < <(jq -r '.[]' <<<"$REGIONS_JSON")
-
-          status=0
-          for pid in "${pids[@]}"; do
-            if ! wait "$pid"; then
-              status=1
-            fi
-          done
-
-          exit "$status"
 
       - name: Resolve us-east-1 test AMI
         id: test-ami
@@ -268,6 +214,8 @@ jobs:
     runs-on: ubuntu-latest
     environment: ami-build
     steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
       - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
           role-to-assume: ${{ secrets.AMI_BUILD_ROLE_ARN }}
@@ -277,26 +225,12 @@ jobs:
         env:
           AMI_NAME: ${{ needs.build-and-copy.outputs.ami_name }}
           OWNER_ACCOUNT_ID: ${{ needs.build-and-copy.outputs.owner_account_id }}
-          REGIONS_JSON: ${{ needs.build-and-copy.outputs.regions_json }}
         run: |
-          while IFS= read -r region; do
-            image_id="$(aws ec2 describe-images \
-              --region "$region" \
-              --owners "$OWNER_ACCOUNT_ID" \
-              --filters "Name=name,Values=$AMI_NAME" "Name=state,Values=available" \
-              --query 'Images[0].ImageId' \
-              --output text)"
-
-            if [ -z "$image_id" ] || [ "$image_id" = "None" ]; then
-              echo "failed to resolve image for $region" >&2
-              exit 1
-            fi
-
-            aws ec2 modify-image-attribute \
-              --region "$region" \
-              --image-id "$image_id" \
-              --launch-permission 'Add=[{Group=all}]'
-          done < <(jq -r '.[]' <<<"$REGIONS_JSON")
+          bash scripts/publish_ami_public.sh \
+            "$OWNER_ACCOUNT_ID" \
+            "$AMI_NAME" \
+            "${{ inputs.source_region }}" \
+            "$PACKER_REGIONS_FILE"
 
   open-promotion-pr:
     needs:

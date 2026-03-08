@@ -27,6 +27,7 @@ This directory contains the Packer build for the nat-zero AMI.
 cd ami
 packer init nat-zero.pkr.hcl
 packer build \
+  -var-file "nat-zero-private-all-regions.pkrvars.hcl" \
   -var "region=us-east-1" \
   -var "subnet_id=subnet-0123456789abcdef0" \
   nat-zero.pkr.hcl
@@ -51,8 +52,9 @@ Workflow: `.github/workflows/nat-images.yml`
   - `run_integration_gate` (default `true`)
 - Behavior:
   - builds a new nat-zero AMI with Packer
-  - copies it to all currently enabled regions in the account (parallel copy with retries)
-  - runs integration tests against the new source AMI (gate) before promotion
+  - uses `nat-zero-private-all-regions.pkrvars.hcl` as the checked-in list of private regional copies
+  - runs integration tests against the new us-east-1 AMI before any public sharing
+  - publishes the copied AMIs only after the integration gates pass
 - updates `ami_owner_account`, `ami_name_pattern` (and generated docs) and opens a PR
 
 Merge the promotion PR to `main` to let release-please publish a new module release that points to the promoted AMI name.

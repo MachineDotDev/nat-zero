@@ -57,11 +57,11 @@ Full end-to-end test: deploys real AWS infrastructure via Terratest, exercises t
 Manual promotion workflow for the default public nat-zero AMI.
 
 1. Build the AMI with Packer in the chosen source region.
-2. Copy it to every enabled AWS region in the account.
+2. Let Packer privately copy it to the regions listed in `ami/nat-zero-private-all-regions.pkrvars.hcl`.
 3. Run two us-east-1 integration gates:
    - direct test of the new AMI
    - upgrade-path test that starts from the shared private test NAT AMI in `NAT_ZERO_TEST_AMI_ID`, reapplies the module with the new AMI, and verifies the old NAT is replaced
-4. Make every copied AMI public.
+4. After the integration gates pass, run a small publish script that opens launch permissions for the copied AMIs.
 5. Open a PR that updates the Terraform defaults (`ami_owner_account`, `ami_name_pattern`) so merge + release-please can publish the new module version.
 
 ## Docs (`docs.yml`)

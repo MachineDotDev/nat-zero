@@ -26,8 +26,14 @@ variable "root_volume_size" {
   default = 4
 }
 
+variable "ami_regions" {
+  type    = list(string)
+  default = []
+}
+
 source "amazon-ebs" "nat_zero" {
   ami_name      = "${var.ami_name_prefix}-${formatdate("YYYYMMDD-hhmmss", timestamp())}"
+  ami_regions   = var.ami_regions
   instance_type = "t4g.nano"
   region        = var.region
   max_retries   = 50
