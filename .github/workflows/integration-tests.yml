@@ -36,9 +36,10 @@ env:
 jobs:
   integration-test:
     if: >-
-      github.event_name == 'workflow_call' ||
-      github.event_name == 'workflow_dispatch' ||
-      github.event.label.name == 'integration-test'
+      github.event_name != 'pull_request' ||
+      github.event.label.name == 'integration-test' ||
+      inputs.nat_ami_id != '' ||
+      inputs.updated_nat_ami_id != ''
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: integration
