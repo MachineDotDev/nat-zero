@@ -147,18 +147,12 @@ variable "lambda_binary_path" {
 
 variable "lambda_binary_url" {
   type        = string
-  default     = "https://github.com/MachineDotDev/nat-zero/releases/download/nat-zero-lambda-latest/lambda.zip"
-  description = "URL to the pre-compiled Go Lambda zip. Used when lambda_binary_path is null and build_lambda_locally is false."
+  default     = null
+  description = "Optional URL to a pre-compiled Go Lambda zip. Defaults to the versioned release asset matching this module release tag."
 }
 
 variable "lambda_binary_base64sha256" {
   type        = string
   default     = null
   description = "Optional base64-encoded SHA256 of the Lambda zip. Override this for custom artifacts or when you want to avoid fetching the published checksum URL."
-}
-
-variable "lambda_binary_base64sha256_url" {
-  type        = string
-  default     = null
-  description = "Optional URL returning the base64-encoded SHA256 for lambda_binary_url. Defaults to appending .base64sha256 to lambda_binary_url."
 }

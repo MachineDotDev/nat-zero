@@ -108,7 +108,7 @@ Only runs when `release_created == 'true'` (i.e., the push that merges a release
 2. Zips as `lambda.zip`.
 3. Writes `lambda.zip.base64sha256`, containing the base64-encoded SHA256 for the zip.
 4. **Uploads the zip and checksum to the versioned release** (e.g., `v0.1.0`).
-5. **Creates/updates a rolling `nat-zero-lambda-latest` release** with the same zip and checksum. This provides a stable URL for the module's default `lambda_binary_url` and the matching default checksum URL.
+5. **Creates/updates a rolling `nat-zero-lambda-latest` release** with the same zip and checksum for convenience, but the module default now pins to the versioned release asset that matches the tagged module version.
 
 ### Changelog sections
 

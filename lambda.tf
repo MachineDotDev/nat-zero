@@ -18,9 +18,12 @@ resource "time_sleep" "lambda_ready" {
 }
 
 locals {
-  downloaded_lambda_zip_path = "${path.module}/.build/lambda.zip"
-  lambda_binary_hash_url     = coalesce(var.lambda_binary_base64sha256_url, "${var.lambda_binary_url}.base64sha256")
-  local_lambda_zip_path      = coalesce(var.lambda_binary_path, local.downloaded_lambda_zip_path)
+  module_release_version      = jsondecode(file("${path.module}/.release-please-manifest.json"))["."]
+  default_lambda_binary_url   = "https://github.com/MachineDotDev/nat-zero/releases/download/v${local.module_release_version}/lambda.zip"
+  downloaded_lambda_zip_path  = "${path.module}/.build/lambda.zip"
+  effective_lambda_binary_url = coalesce(var.lambda_binary_url, local.default_lambda_binary_url)
+  lambda_binary_hash_url      = "${local.effective_lambda_binary_url}.base64sha256"
+  local_lambda_zip_path       = coalesce(var.lambda_binary_path, local.downloaded_lambda_zip_path)
   local_lambda_source_hash = var.lambda_binary_path != null ? (
     coalesce(var.lambda_binary_base64sha256, filebase64sha256(var.lambda_binary_path))
     ) : (
@@ -48,7 +51,7 @@ resource "terraform_data" "download_lambda" {
 
   triggers_replace = [
     path.module,
-    var.lambda_binary_url,
+    local.effective_lambda_binary_url,
     local.lambda_binary_hash_url,
     trimspace(coalesce(local.downloaded_lambda_source_hash, "")),
   ]
@@ -56,7 +59,7 @@ resource "terraform_data" "download_lambda" {
   provisioner "local-exec" {
     command = <<-EOT
       mkdir -p "${path.module}/.build" && \
-      curl -sfL -o "${local.downloaded_lambda_zip_path}" "${var.lambda_binary_url}"
+      curl -sfL -o "${local.downloaded_lambda_zip_path}" "${local.effective_lambda_binary_url}"
     EOT
   }
 }
