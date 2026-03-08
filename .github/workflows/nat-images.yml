@@ -26,9 +26,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  id-token: write
-  contents: write
-  pull-requests: write
+  contents: read
 
 env:
   PACKER_REGIONS_FILE: ami/nat-zero-private-all-regions.pkrvars.hcl
@@ -36,6 +34,8 @@ env:
 jobs:
   resolve-inputs:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       build_subnet_id: ${{ steps.resolve.outputs.build_subnet_id }}
       source_region: ${{ steps.resolve.outputs.source_region }}
@@ -90,6 +90,9 @@ jobs:
     if: ${{ needs.resolve-inputs.outputs.should_run == 'true' }}
     runs-on: ubuntu-latest
     environment: ami-build
+    permissions:
+      id-token: write
+      contents: read
     outputs:
       ami_name: ${{ steps.metadata.outputs.ami_name }}
       owner_account_id: ${{ steps.metadata.outputs.owner_account_id }}
@@ -205,6 +208,9 @@ jobs:
       )
     runs-on: ubuntu-latest
     environment: ami-build
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -231,6 +237,9 @@ jobs:
       - publish-public
     if: ${{ needs.resolve-inputs.outputs.should_publish == 'true' && needs.publish-public.result == 'success' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
