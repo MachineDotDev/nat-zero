@@ -162,3 +162,5 @@ module "nat_zero" {
   lambda_binary_path = "${path.module}/.build/lambda.zip"
 }
 ```
+
+This is also the right way to test an unreleased branch when the branch includes Lambda code changes. The default downloaded Lambda zip is pinned to the latest tagged module release.

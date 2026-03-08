@@ -144,15 +144,3 @@ variable "lambda_binary_path" {
   default     = null
   description = "Optional path to a pre-built Lambda zip on disk. Use this to build the artifact outside Terraform and avoid apply-time compilation."
 }
-
-variable "lambda_binary_url" {
-  type        = string
-  default     = null
-  description = "Optional URL to a pre-compiled Go Lambda zip. Defaults to the versioned release asset matching this module release tag."
-}
-
-variable "lambda_binary_base64sha256" {
-  type        = string
-  default     = null
-  description = "Optional base64-encoded SHA256 of the Lambda zip. Override this for custom artifacts or when you want to avoid fetching the published checksum URL."
-}

@@ -18,32 +18,18 @@ resource "time_sleep" "lambda_ready" {
 }
 
 locals {
-  module_release_version      = jsondecode(file("${path.module}/.release-please-manifest.json"))["."]
-  default_lambda_binary_url   = "https://github.com/MachineDotDev/nat-zero/releases/download/v${local.module_release_version}/lambda.zip"
-  downloaded_lambda_zip_path  = "${path.module}/.build/lambda.zip"
-  effective_lambda_binary_url = coalesce(var.lambda_binary_url, local.default_lambda_binary_url)
-  lambda_binary_hash_url      = "${local.effective_lambda_binary_url}.base64sha256"
-  local_lambda_zip_path       = coalesce(var.lambda_binary_path, local.downloaded_lambda_zip_path)
+  lambda_release_metadata            = jsondecode(file("${path.module}/.lambda-release.json"))
+  module_release_version             = jsondecode(file("${path.module}/.release-please-manifest.json"))["."]
+  default_lambda_binary_url          = "https://github.com/MachineDotDev/nat-zero/releases/download/v${local.module_release_version}/lambda.zip"
+  default_lambda_binary_base64sha256 = local.lambda_release_metadata.base64sha256
+  downloaded_lambda_zip_path         = "${path.module}/.build/lambda.zip"
+  local_lambda_zip_path              = coalesce(var.lambda_binary_path, local.downloaded_lambda_zip_path)
   local_lambda_source_hash = var.lambda_binary_path != null ? (
-    coalesce(var.lambda_binary_base64sha256, filebase64sha256(var.lambda_binary_path))
+    filebase64sha256(var.lambda_binary_path)
     ) : (
     fileexists(local.downloaded_lambda_zip_path) ? filebase64sha256(local.downloaded_lambda_zip_path) : null
   )
-  downloaded_lambda_source_hash = coalesce(
-    var.lambda_binary_base64sha256,
-    one(data.http.lambda_binary_hash[*].response_body),
-    null,
-  )
-  lambda_source_hash = var.build_lambda_locally ? local.local_lambda_source_hash : trimspace(coalesce(local.downloaded_lambda_source_hash, ""))
-}
-
-data "http" "lambda_binary_hash" {
-  count = var.build_lambda_locally || var.lambda_binary_path != null || var.lambda_binary_base64sha256 != null ? 0 : 1
-  url   = local.lambda_binary_hash_url
-
-  request_headers = {
-    Accept = "text/plain"
-  }
+  lambda_source_hash = var.build_lambda_locally || var.lambda_binary_path != null ? local.local_lambda_source_hash : local.default_lambda_binary_base64sha256
 }
 
 resource "terraform_data" "download_lambda" {
@@ -51,15 +37,14 @@ resource "terraform_data" "download_lambda" {
 
   triggers_replace = [
     path.module,
-    local.effective_lambda_binary_url,
-    local.lambda_binary_hash_url,
-    trimspace(coalesce(local.downloaded_lambda_source_hash, "")),
+    local.default_lambda_binary_url,
+    local.default_lambda_binary_base64sha256,
   ]
 
   provisioner "local-exec" {
     command = <<-EOT
       mkdir -p "${path.module}/.build" && \
-      curl -sfL -o "${local.downloaded_lambda_zip_path}" "${local.effective_lambda_binary_url}"
+      curl -sfL -o "${local.downloaded_lambda_zip_path}" "${local.default_lambda_binary_url}"
     EOT
   }
 }
@@ -81,8 +66,9 @@ resource "null_resource" "build_lambda" {
   provisioner "local-exec" {
     command = <<-EOT
       cd ${path.module}/cmd/lambda && \
-      GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -tags lambda.norpc -ldflags='-s -w' -o bootstrap && \
-      zip lambda.zip bootstrap && \
+      GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -buildvcs=false -tags lambda.norpc -ldflags='-s -w -buildid=' -o bootstrap && \
+      TZ=UTC touch -t 198001010000 bootstrap && \
+      zip -q -X lambda.zip bootstrap && \
       mkdir -p ../../.build && \
       cp lambda.zip ../../.build/lambda.zip && \
       rm bootstrap lambda.zip
@@ -124,6 +110,11 @@ resource "aws_lambda_function" "nat_zero" {
     precondition {
       condition     = !(var.build_lambda_locally && var.lambda_binary_path != null)
       error_message = "build_lambda_locally and lambda_binary_path cannot be used together."
+    }
+
+    precondition {
+      condition     = var.build_lambda_locally || var.lambda_binary_path != null || local.lambda_release_metadata.version == local.module_release_version
+      error_message = ".lambda-release.json must match .release-please-manifest.json when using the bundled Lambda release artifact."
     }
   }
 

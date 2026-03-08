@@ -4,7 +4,6 @@
 |------|---------|
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.4 |
 | <a name="requirement_aws"></a> [aws](#requirement\_aws) | >= 5.0 |
-| <a name="requirement_http"></a> [http](#requirement\_http) | >= 3.0 |
 | <a name="requirement_null"></a> [null](#requirement\_null) | >= 3.0 |
 | <a name="requirement_time"></a> [time](#requirement\_time) | >= 0.9 |
 
@@ -38,7 +37,6 @@ No modules.
 | [time_sleep.eventbridge_propagation](https://registry.terraform.io/providers/hashicorp/time/latest/docs/resources/sleep) | resource |
 | [time_sleep.lambda_ready](https://registry.terraform.io/providers/hashicorp/time/latest/docs/resources/sleep) | resource |
 | [aws_ami.nat](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/ami) | data source |
-| [http_http.lambda_binary_hash](https://registry.terraform.io/providers/hashicorp/http/latest/docs/data-sources/http) | data source |
 
 ## Inputs
 
@@ -55,9 +53,7 @@ No modules.
 | <a name="input_ignore_tag_key"></a> [ignore\_tag\_key](#input\_ignore\_tag\_key) | Tag key used to mark instances the Lambda should ignore | `string` | `"nat-zero:ignore"` | no |
 | <a name="input_ignore_tag_value"></a> [ignore\_tag\_value](#input\_ignore\_tag\_value) | Tag value used to mark instances the Lambda should ignore | `string` | `"true"` | no |
 | <a name="input_instance_type"></a> [instance\_type](#input\_instance\_type) | Instance type for the NAT instance | `string` | `"t4g.nano"` | no |
-| <a name="input_lambda_binary_base64sha256"></a> [lambda\_binary\_base64sha256](#input\_lambda\_binary\_base64sha256) | Optional base64-encoded SHA256 of the Lambda zip. Override this for custom artifacts or when you want to avoid fetching the published checksum URL. | `string` | `null` | no |
 | <a name="input_lambda_binary_path"></a> [lambda\_binary\_path](#input\_lambda\_binary\_path) | Optional path to a pre-built Lambda zip on disk. Use this to build the artifact outside Terraform and avoid apply-time compilation. | `string` | `null` | no |
-| <a name="input_lambda_binary_url"></a> [lambda\_binary\_url](#input\_lambda\_binary\_url) | Optional URL to a pre-compiled Go Lambda zip. Defaults to the versioned release asset matching this module release tag. | `string` | `null` | no |
 | <a name="input_lambda_memory_size"></a> [lambda\_memory\_size](#input\_lambda\_memory\_size) | Memory allocated to the Lambda function in MB (also scales CPU proportionally) | `number` | `128` | no |
 | <a name="input_log_retention_days"></a> [log\_retention\_days](#input\_log\_retention\_days) | CloudWatch log retention in days (only used when enable\_logging is true) | `number` | `14` | no |
 | <a name="input_market_type"></a> [market\_type](#input\_market\_type) | Whether to use spot or on-demand instances | `string` | `"on-demand"` | no |

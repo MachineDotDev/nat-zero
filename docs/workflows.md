@@ -100,15 +100,31 @@ Runs `googleapis/release-please-action@v4` with:
    - Creates a **GitHub Release** with a version tag (e.g., `v0.1.0`).
    - Sets output `release_created=true` and `tag_name=v0.1.0`.
 
+## Prepare Release Lambda (`release-please-lambda.yml`)
+
+Runs on release-please PRs before merge.
+
+1. Checks out the `release-please--...` branch.
+2. Builds a deterministic `linux/arm64` Lambda zip from the PR contents.
+3. Computes its base64 SHA256.
+4. Updates `.lambda-release.json` with the release version from `.release-please-manifest.json` and the matching hash.
+5. Commits that metadata back onto the release PR branch if it changed.
+
+This keeps the module default simple at runtime:
+
+- Terraform downloads a versioned `lambda.zip` release asset.
+- Terraform reads the matching committed hash from `.lambda-release.json`.
+- No checksum download is needed during `terraform plan`.
+
 ### Job 2: `build-lambda`
 
 Only runs when `release_created == 'true'` (i.e., the push that merges a release PR).
 
 1. Cross-compiles the Go Lambda for `linux/arm64`.
-2. Zips as `lambda.zip`.
-3. Writes `lambda.zip.base64sha256`, containing the base64-encoded SHA256 for the zip.
-4. **Uploads the zip and checksum to the versioned release** (e.g., `v0.1.0`).
-5. **Creates/updates a rolling `nat-zero-lambda-latest` release** with the same zip and checksum for convenience, but the module default now pins to the versioned release asset that matches the tagged module version.
+2. Creates a deterministic `lambda.zip`.
+3. Verifies the built zip matches the committed metadata in `.lambda-release.json`.
+4. **Uploads the zip to the versioned release** (e.g., `v0.1.0`).
+5. **Creates/updates a rolling `nat-zero-lambda-latest` release** with the same zip for convenience, but the module default pins to the versioned release asset that matches the tagged module version.
 
 ### Changelog sections
 
@@ -158,5 +174,5 @@ Post-merge to main:
 
 Merge release PR:
   -> release-please creates GitHub Release + tag
-  -> build-lambda uploads lambda.zip + lambda.zip.base64sha256 to release + rolling latest
+  -> build-lambda uploads lambda.zip to release + rolling latest
 ```
