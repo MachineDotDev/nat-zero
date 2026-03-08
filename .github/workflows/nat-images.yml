@@ -5,7 +5,7 @@ on:
     inputs:
       build_subnet_id:
         description: Public subnet ID to use for the Packer builder instance
-        required: true
+        required: false
         type: string
       source_region:
         description: Region where the AMI is built before being copied globally
@@ -17,6 +17,9 @@ on:
         required: false
         default: true
         type: boolean
+  pull_request:
+    types:
+      - labeled
 
 concurrency:
   group: nat-zero-ami
@@ -32,7 +35,60 @@ env:
   PACKER_REGIONS_FILE: ami/nat-zero-private-all-regions.pkrvars.hcl
 
 jobs:
+  resolve-inputs:
+    runs-on: ubuntu-latest
+    outputs:
+      build_subnet_id: ${{ steps.resolve.outputs.build_subnet_id }}
+      source_region: ${{ steps.resolve.outputs.source_region }}
+      run_integration_gate: ${{ steps.resolve.outputs.run_integration_gate }}
+      should_run: ${{ steps.resolve.outputs.should_run }}
+      should_publish: ${{ steps.resolve.outputs.should_publish }}
+      checkout_ref: ${{ steps.resolve.outputs.checkout_ref }}
+    steps:
+      - name: Resolve workflow inputs
+        id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_LABEL: ${{ github.event.label.name }}
+          INPUT_BUILD_SUBNET_ID: ${{ github.event.inputs.build_subnet_id }}
+          INPUT_SOURCE_REGION: ${{ github.event.inputs.source_region }}
+          INPUT_RUN_INTEGRATION_GATE: ${{ github.event.inputs.run_integration_gate }}
+          DEFAULT_BUILD_SUBNET_ID: ${{ vars.NAT_ZERO_AMI_BUILD_SUBNET_ID }}
+          GITHUB_HEAD_REF: ${{ github.head_ref }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: |
+          should_run=true
+          should_publish=true
+
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            if [ "$EVENT_LABEL" != "nat-images" ]; then
+              should_run=false
+            fi
+            should_publish=false
+          fi
+
+          build_subnet_id="${INPUT_BUILD_SUBNET_ID:-$DEFAULT_BUILD_SUBNET_ID}"
+          source_region="${INPUT_SOURCE_REGION:-us-east-1}"
+          run_integration_gate="${INPUT_RUN_INTEGRATION_GATE:-true}"
+          checkout_ref="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+
+          if [ "$should_run" = "true" ] && [ -z "$build_subnet_id" ]; then
+            echo "build_subnet_id input is required unless vars.NAT_ZERO_AMI_BUILD_SUBNET_ID is set" >&2
+            exit 1
+          fi
+
+          {
+            echo "build_subnet_id=$build_subnet_id"
+            echo "source_region=$source_region"
+            echo "run_integration_gate=$run_integration_gate"
+            echo "should_run=$should_run"
+            echo "should_publish=$should_publish"
+            echo "checkout_ref=$checkout_ref"
+          } >> "$GITHUB_OUTPUT"
+
   build-and-copy:
+    needs: resolve-inputs
+    if: ${{ needs.resolve-inputs.outputs.should_run == 'true' }}
     runs-on: ubuntu-latest
     environment: ami-build
     outputs:
@@ -48,14 +104,14 @@ jobs:
       - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
           role-to-assume: ${{ secrets.AMI_BUILD_ROLE_ARN }}
-          aws-region: ${{ inputs.source_region }}
+          aws-region: ${{ needs.resolve-inputs.outputs.source_region }}
 
       - name: Prepare Packer copy regions
         id: regions
         run: |
           bash scripts/render_packer_ami_regions.sh \
             "$PACKER_REGIONS_FILE" \
-            "${{ inputs.source_region }}" \
+            "${{ needs.resolve-inputs.outputs.source_region }}" \
             "$RUNNER_TEMP/nat-zero-copy-regions.pkrvars.hcl"
 
           echo "var_file=$RUNNER_TEMP/nat-zero-copy-regions.pkrvars.hcl" >> "$GITHUB_OUTPUT"
@@ -69,8 +125,8 @@ jobs:
           packer build \
             -color=false \
             -var-file "${{ steps.regions.outputs.var_file }}" \
-            -var "region=${{ inputs.source_region }}" \
-            -var "subnet_id=${{ inputs.build_subnet_id }}" \
+            -var "region=${{ needs.resolve-inputs.outputs.source_region }}" \
+            -var "subnet_id=${{ needs.resolve-inputs.outputs.build_subnet_id }}" \
             nat-zero.pkr.hcl
 
           source_ami_id="$(jq -er '.builds[-1].artifact_id' manifest.json | awk -F: 'NF == 2 && $2 != "" { print $2 }')"
@@ -87,7 +143,7 @@ jobs:
           SOURCE_AMI_ID: ${{ steps.build.outputs.source_ami_id }}
         run: |
           owner_account_id="$(aws sts get-caller-identity --query 'Account' --output text)"
-          ami_name="$(aws ec2 describe-images --region "${{ inputs.source_region }}" --image-ids "$SOURCE_AMI_ID" --query 'Images[0].Name' --output text)"
+          ami_name="$(aws ec2 describe-images --region "${{ needs.resolve-inputs.outputs.source_region }}" --image-ids "$SOURCE_AMI_ID" --query 'Images[0].Name' --output text)"
 
           echo "owner_account_id=$owner_account_id" >> "$GITHUB_OUTPUT"
           echo "ami_name=$ami_name" >> "$GITHUB_OUTPUT"
@@ -99,7 +155,7 @@ jobs:
           OWNER_ACCOUNT_ID: ${{ steps.metadata.outputs.owner_account_id }}
           SOURCE_AMI_ID: ${{ steps.build.outputs.source_ami_id }}
         run: |
-          if [ "${{ inputs.source_region }}" = "us-east-1" ]; then
+          if [ "${{ needs.resolve-inputs.outputs.source_region }}" = "us-east-1" ]; then
             test_ami_id="$SOURCE_AMI_ID"
           else
             test_ami_id="$(aws ec2 describe-images \
@@ -118,8 +174,10 @@ jobs:
           echo "test_ami_id=$test_ami_id" >> "$GITHUB_OUTPUT"
 
   integration-new-ami:
-    if: ${{ inputs.run_integration_gate }}
-    needs: build-and-copy
+    if: ${{ needs.resolve-inputs.outputs.should_run == 'true' && needs.resolve-inputs.outputs.run_integration_gate == 'true' }}
+    needs:
+      - resolve-inputs
+      - build-and-copy
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: integration
@@ -154,8 +212,9 @@ jobs:
         run: go test -v -timeout 10m -count=1
 
   integration-ami-upgrade:
-    if: ${{ inputs.run_integration_gate }}
+    if: ${{ needs.resolve-inputs.outputs.should_run == 'true' && needs.resolve-inputs.outputs.run_integration_gate == 'true' }}
     needs:
+      - resolve-inputs
       - build-and-copy
       - integration-new-ami
     runs-on: ubuntu-latest
@@ -201,14 +260,17 @@ jobs:
 
   publish-public:
     needs:
+      - resolve-inputs
       - build-and-copy
       - integration-new-ami
       - integration-ami-upgrade
     if: >-
       always() &&
+      needs.resolve-inputs.outputs.should_run == 'true' &&
+      needs.resolve-inputs.outputs.should_publish == 'true' &&
       needs.build-and-copy.result == 'success' &&
       (
-        inputs.run_integration_gate == false ||
+        needs.resolve-inputs.outputs.run_integration_gate != 'true' ||
         (needs.integration-new-ami.result == 'success' && needs.integration-ami-upgrade.result == 'success')
       )
     runs-on: ubuntu-latest
@@ -219,7 +281,7 @@ jobs:
       - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
           role-to-assume: ${{ secrets.AMI_BUILD_ROLE_ARN }}
-          aws-region: ${{ inputs.source_region }}
+          aws-region: ${{ needs.resolve-inputs.outputs.source_region }}
 
       - name: Make copied AMIs public
         env:
@@ -229,19 +291,20 @@ jobs:
           bash scripts/publish_ami_public.sh \
             "$OWNER_ACCOUNT_ID" \
             "$AMI_NAME" \
-            "${{ inputs.source_region }}" \
+            "${{ needs.resolve-inputs.outputs.source_region }}" \
             "$PACKER_REGIONS_FILE"
 
   open-promotion-pr:
     needs:
+      - resolve-inputs
       - build-and-copy
       - publish-public
-    if: ${{ needs.publish-public.result == 'success' }}
+    if: ${{ needs.resolve-inputs.outputs.should_publish == 'true' && needs.publish-public.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          ref: ${{ github.ref_name }}
+          ref: ${{ needs.resolve-inputs.outputs.checkout_ref }}
 
       - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
         with:

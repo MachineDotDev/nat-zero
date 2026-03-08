@@ -9,7 +9,7 @@ Internal reference for GitHub Actions workflows, repo rulesets, and the release 
 | Pre-commit | `precommit.yml` | All PRs | `precommit` |
 | Go Tests | `go-tests.yml` | PRs touching `cmd/lambda/**`; push to `main` | `go-test` |
 | Integration Tests | `integration-tests.yml` | PR labeled `integration-test`; manual dispatch; reusable workflow | `integration-test` |
-| NAT Images | `nat-images.yml` | Manual dispatch | No (promotion workflow) |
+| NAT Images | `nat-images.yml` | Manual dispatch; PR labeled `nat-images` | No (promotion workflow) |
 | Docs | `docs.yml` | Push to `main` (filtered paths) | No (post-merge deploy) |
 | Release | `release-please.yml` | Push to `main`; manual dispatch | No (post-merge) |
 
@@ -63,6 +63,8 @@ Manual promotion workflow for the default public nat-zero AMI.
    - upgrade-path test that starts from the shared private test NAT AMI in `NAT_ZERO_TEST_AMI_ID`, reapplies the module with the new AMI, and verifies the old NAT is replaced
 4. After the integration gates pass, run a small publish script that opens launch permissions for the copied AMIs.
 5. Open a PR that updates the Terraform defaults (`ami_owner_account`, `ami_name_pattern`) so merge + release-please can publish the new module version.
+
+For pre-merge validation on a branch, add the `nat-images` label to the PR. That trigger uses the GitHub Actions variable `NAT_ZERO_AMI_BUILD_SUBNET_ID`, runs the build and integration gates on the PR branch, and intentionally skips the public-sharing and promotion-PR jobs.
 
 ## Docs (`docs.yml`)
 

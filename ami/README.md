@@ -45,8 +45,12 @@ Workflow: `.github/workflows/nat-images.yml`
 
 - Requires GitHub environment secret `AMI_BUILD_ROLE_ARN`
 - Requires GitHub environment secret `INTEGRATION_ROLE_ARN` when `run_integration_gate=true`
+- Requires GitHub Actions variable `NAT_ZERO_AMI_BUILD_SUBNET_ID` for label-triggered PR validation runs
 - Uses OIDC via `aws-actions/configure-aws-credentials`
-- Inputs:
+- Triggers:
+  - `workflow_dispatch`
+  - PR label `nat-images` for pre-merge validation on the branch under review
+- Inputs for `workflow_dispatch`:
   - `build_subnet_id`
   - `source_region` (default `us-east-1`)
   - `run_integration_gate` (default `true`)
@@ -55,6 +59,7 @@ Workflow: `.github/workflows/nat-images.yml`
   - uses `nat-zero-private-all-regions.pkrvars.hcl` as the checked-in list of private regional copies
   - runs integration tests against the new us-east-1 AMI before any public sharing
   - publishes the copied AMIs only after the integration gates pass
+- PR label runs stop after build + integration so they can validate the branch safely without publishing or opening a promotion PR
 - updates `ami_owner_account`, `ami_name_pattern` (and generated docs) and opens a PR
 
 Merge the promotion PR to `main` to let release-please publish a new module release that points to the promoted AMI name.
