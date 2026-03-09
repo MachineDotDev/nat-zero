@@ -31,7 +31,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Remove trigger label
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LABEL_NAME: ${{ github.event.label.name }}
-        run: gh pr edit "${{ github.event.pull_request.number }}" --remove-label "$LABEL_NAME"
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          gh api \
+            --method DELETE \
+            "repos/$REPOSITORY/issues/$PR_NUMBER/labels/$LABEL_NAME"
