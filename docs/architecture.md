@@ -183,6 +183,11 @@ if triggerInst != nil {
 
 This also applies to NAT instances that may not appear in filter-based queries immediately after creation (tag propagation delay). The reconciler adds the trigger instance to the NAT list if it's missing.
 
+For destructive EIP release, nat-zero uses an additional safety guard:
+
+- EIPs are released only in the scale-down path (`workloads=0`)
+- NAT `pending` is treated as active egress state (same as `running`) and never triggers EIP release
+
 ### EventBridge Propagation Delay
 
 After Terraform creates the EventBridge rule and target, there's a propagation delay before events are reliably delivered. Events fired during this window may be silently dropped.
