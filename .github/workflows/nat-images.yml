@@ -17,9 +17,25 @@ on:
         required: false
         default: true
         type: boolean
-  pull_request:
-    types:
-      - labeled
+      checkout_ref:
+        description: Optional git ref to checkout before running the workflow
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      build_subnet_id:
+        required: false
+        type: string
+      source_region:
+        required: false
+        type: string
+      run_integration_gate:
+        required: false
+        default: true
+        type: boolean
+      checkout_ref:
+        required: false
+        type: string
 
 concurrency:
   group: nat-zero-ami
@@ -27,6 +43,7 @@ concurrency:
 
 permissions:
   contents: read
+  id-token: write
 
 env:
   PACKER_REGIONS_FILE: ami/nat-zero-private-all-regions.pkrvars.hcl
@@ -40,7 +57,6 @@ jobs:
       build_subnet_id: ${{ steps.resolve.outputs.build_subnet_id }}
       source_region: ${{ steps.resolve.outputs.source_region }}
       run_integration_gate: ${{ steps.resolve.outputs.run_integration_gate }}
-      should_run: ${{ steps.resolve.outputs.should_run }}
       should_publish: ${{ steps.resolve.outputs.should_publish }}
       checkout_ref: ${{ steps.resolve.outputs.checkout_ref }}
     steps:
@@ -48,30 +64,25 @@ jobs:
         id: resolve
         env:
           EVENT_NAME: ${{ github.event_name }}
-          EVENT_LABEL: ${{ github.event.label.name }}
-          INPUT_BUILD_SUBNET_ID: ${{ github.event.inputs.build_subnet_id }}
-          INPUT_SOURCE_REGION: ${{ github.event.inputs.source_region }}
-          INPUT_RUN_INTEGRATION_GATE: ${{ github.event.inputs.run_integration_gate }}
+          INPUT_BUILD_SUBNET_ID: ${{ inputs.build_subnet_id }}
+          INPUT_SOURCE_REGION: ${{ inputs.source_region }}
+          INPUT_RUN_INTEGRATION_GATE: ${{ inputs.run_integration_gate }}
+          INPUT_CHECKOUT_REF: ${{ inputs.checkout_ref }}
           DEFAULT_BUILD_SUBNET_ID: ${{ vars.NAT_ZERO_AMI_BUILD_SUBNET_ID }}
-          GITHUB_HEAD_REF: ${{ github.head_ref }}
           GITHUB_REF_NAME: ${{ github.ref_name }}
         run: |
-          should_run=true
           should_publish=true
 
-          if [ "$EVENT_NAME" = "pull_request" ]; then
-            if [ "$EVENT_LABEL" != "nat-images" ]; then
-              should_run=false
-            fi
+          if [ "$EVENT_NAME" = "workflow_call" ]; then
             should_publish=false
           fi
 
           build_subnet_id="${INPUT_BUILD_SUBNET_ID:-$DEFAULT_BUILD_SUBNET_ID}"
           source_region="${INPUT_SOURCE_REGION:-us-east-1}"
           run_integration_gate="${INPUT_RUN_INTEGRATION_GATE:-true}"
-          checkout_ref="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+          checkout_ref="${INPUT_CHECKOUT_REF:-$GITHUB_REF_NAME}"
 
-          if [ "$should_run" = "true" ] && [ -z "$build_subnet_id" ]; then
+          if [ -z "$build_subnet_id" ]; then
             echo "build_subnet_id input is required unless vars.NAT_ZERO_AMI_BUILD_SUBNET_ID is set" >&2
             exit 1
           fi
@@ -80,14 +91,12 @@ jobs:
             echo "build_subnet_id=$build_subnet_id"
             echo "source_region=$source_region"
             echo "run_integration_gate=$run_integration_gate"
-            echo "should_run=$should_run"
             echo "should_publish=$should_publish"
             echo "checkout_ref=$checkout_ref"
           } >> "$GITHUB_OUTPUT"
 
   build-and-copy:
     needs: resolve-inputs
-    if: ${{ needs.resolve-inputs.outputs.should_run == 'true' }}
     runs-on: ubuntu-latest
     environment: ami-build
     permissions:
@@ -182,13 +191,14 @@ jobs:
           echo "test_ami_id=$test_ami_id" >> "$GITHUB_OUTPUT"
 
   integration:
-    if: ${{ needs.resolve-inputs.outputs.should_run == 'true' && needs.resolve-inputs.outputs.run_integration_gate == 'true' }}
+    if: ${{ needs.resolve-inputs.outputs.run_integration_gate == 'true' }}
     needs:
       - resolve-inputs
       - build-and-copy
     uses: ./.github/workflows/integration-tests.yml
     secrets: inherit
     with:
+      checkout_ref: ${{ needs.resolve-inputs.outputs.checkout_ref }}
       nat_ami_id: ${{ vars.NAT_ZERO_TEST_AMI_ID }}
       updated_nat_ami_id: ${{ needs.build-and-copy.outputs.test_ami_id }}
 
@@ -199,7 +209,6 @@ jobs:
       - integration
     if: >-
       always() &&
-      needs.resolve-inputs.outputs.should_run == 'true' &&
       needs.resolve-inputs.outputs.should_publish == 'true' &&
       needs.build-and-copy.result == 'success' &&
       (

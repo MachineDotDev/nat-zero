@@ -1,8 +1,6 @@
 name: Integration Tests
 
 on:
-  pull_request:
-    types: [labeled]
   workflow_dispatch:
     inputs:
       nat_ami_id:
@@ -13,12 +11,19 @@ on:
         description: Optional replacement NAT AMI ID to exercise the AMI upgrade path
         required: false
         type: string
+      checkout_ref:
+        description: Optional git ref to checkout before running the test
+        required: false
+        type: string
   workflow_call:
     inputs:
       nat_ami_id:
         required: false
         type: string
       updated_nat_ami_id:
+        required: false
+        type: string
+      checkout_ref:
         required: false
         type: string
 
@@ -35,16 +40,13 @@ env:
 
 jobs:
   integration-test:
-    if: >-
-      github.event_name != 'pull_request' ||
-      github.event.label.name == 'integration-test' ||
-      inputs.nat_ami_id != '' ||
-      inputs.updated_nat_ami_id != ''
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: integration
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ inputs.checkout_ref || github.ref_name }}
 
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
@@ -61,8 +63,8 @@ jobs:
 
       - name: Resolve NAT AMI inputs
         env:
-          INPUT_NAT_AMI_ID: ${{ inputs.nat_ami_id || github.event.inputs.nat_ami_id || '' }}
-          INPUT_UPDATED_NAT_AMI_ID: ${{ inputs.updated_nat_ami_id || github.event.inputs.updated_nat_ami_id || '' }}
+          INPUT_NAT_AMI_ID: ${{ inputs.nat_ami_id }}
+          INPUT_UPDATED_NAT_AMI_ID: ${{ inputs.updated_nat_ami_id }}
         run: |
           nat_ami_id="${INPUT_NAT_AMI_ID:-$TEST_NAT_AMI_ID}"
 

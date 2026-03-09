@@ -59,7 +59,7 @@ The test uses [Terratest](https://terratest.gruntwork.io/) with a single `terraf
 
 ## CI
 
-Integration tests run in GitHub Actions when the `integration-test` label is added to a PR. They use OIDC to assume an AWS role in a dedicated test account.
+Integration tests run in GitHub Actions when the `integration-test` label is added to a PR. A small router workflow handles the label event and then calls the reusable integration workflow. The tests use OIDC to assume an AWS role in a dedicated test account.
 
 - Concurrency: one test at a time (`cancel-in-progress: false`)
 - Timeout: 15 minutes

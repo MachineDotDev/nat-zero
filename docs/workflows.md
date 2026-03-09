@@ -6,10 +6,11 @@ Internal reference for GitHub Actions workflows, repo rulesets, and the release 
 
 | Workflow | File | Triggers | Required Check |
 |----------|------|----------|----------------|
+| Manual PR Checks | `manual-pr-checks.yml` | PR labeled `integration-test` or `nat-images` | No (router workflow) |
 | Pre-commit | `precommit.yml` | All PRs | `precommit` |
 | Go Tests | `go-tests.yml` | PRs touching `cmd/lambda/**`; push to `main` | `go-test` |
-| Integration Tests | `integration-tests.yml` | PR labeled `integration-test`; manual dispatch; reusable workflow | `integration-test` |
-| NAT Images | `nat-images.yml` | Manual dispatch; PR labeled `nat-images` | No (promotion workflow) |
+| Integration Tests | `integration-tests.yml` | Manual dispatch; reusable workflow | `integration-test` |
+| NAT Images | `nat-images.yml` | Manual dispatch; reusable workflow | No (promotion workflow) |
 | Docs | `docs.yml` | Push to `main` (filtered paths) | No (post-merge deploy) |
 | Release | `release-please.yml` | Push to `main`; manual dispatch | No (post-merge) |
 
@@ -29,14 +30,23 @@ Runs `go test -v -race ./...` in `cmd/lambda/` (Lambda unit tests).
 - **Job name**: `go-test` (required status check for merge).
 - **Note**: Path-filtered. If a PR doesn't touch Go code, this check won't run and won't block merge (see ruleset notes below).
 
+## Manual PR Checks (`manual-pr-checks.yml`)
+
+Single entry point for expensive, manually requested PR checks.
+
+- **PR trigger**: `labeled` type only.
+- **Labels**:
+  - `integration-test` -> calls the reusable integration workflow
+  - `nat-images` -> calls the reusable NAT image workflow
+- **Why this exists**: GitHub cannot filter `pull_request:labeled` by label name up front. A single router workflow keeps that complexity in one place and prevents both heavyweight workflows from waking up on every label event.
+- **How it appears on the PR**: the called reusable jobs show up as normal PR checks under the router workflow run.
+
 ## Integration Tests (`integration-tests.yml`)
 
 Full end-to-end test: deploys real AWS infrastructure via Terratest, exercises the Lambda lifecycle (create NAT, scale-down, restart, cleanup), then destroys everything.
 
-- **PR trigger**: `labeled` type only. Runs when the `integration-test` label is added.
 - **Manual trigger**: `workflow_dispatch`.
 - **Reusable trigger**: `workflow_call`.
-- **Condition**: `github.event.label.name == 'integration-test'` (or manual dispatch).
 - **Concurrency**: Group `nat-zero-integration`, `cancel-in-progress: false`. Only one integration test runs at a time; new ones queue.
 - **Environment**: `integration` (holds the `INTEGRATION_ROLE_ARN` secret for OIDC).
 - **Timeout**: 15 minutes.
@@ -68,7 +78,7 @@ Manual promotion workflow for the default public nat-zero AMI.
 4. After the integration gates pass, run a small publish script that opens launch permissions for the copied AMIs.
 5. Open a PR that updates the Terraform defaults (`ami_owner_account`, `ami_name_pattern`) so merge + release-please can publish the new module version.
 
-For pre-merge validation on a branch, add the `nat-images` label to the PR. That trigger uses the GitHub Actions variable `NAT_ZERO_AMI_BUILD_SUBNET_ID`, runs the build and integration gates on the PR branch, and intentionally skips the public-sharing and promotion-PR jobs.
+For pre-merge validation on a branch, add the `nat-images` label to the PR. The router workflow calls `nat-images.yml` as a reusable workflow, which uses the GitHub Actions variable `NAT_ZERO_AMI_BUILD_SUBNET_ID`, runs the build and integration gates on the PR branch, and intentionally skips the public-sharing and promotion-PR jobs.
 
 ## Docs (`docs.yml`)
 
@@ -151,7 +161,8 @@ That is the full release artifact flow. There is no second workflow that edits t
 Open PR
   -> precommit runs (always)
   -> go-test runs (if cmd/lambda/** changed)
-  -> Add "integration-test" label -> integration tests run against real AWS
+  -> Add "integration-test" label -> router calls integration tests
+  -> Add "nat-images" label -> router calls the NAT image build/integration gate
   -> threads resolved
   -> Squash merge to main
 
