@@ -17,15 +17,40 @@ resource "time_sleep" "lambda_ready" {
   destroy_duration = var.enable_logging ? "10s" : "0s"
 }
 
-resource "null_resource" "download_lambda" {
-  count = var.build_lambda_locally ? 0 : 1
+locals {
+  module_release_version     = jsondecode(file("${path.module}/.release-please-manifest.json"))["."]
+  default_lambda_binary_url  = "https://github.com/MachineDotDev/nat-zero/releases/download/v${local.module_release_version}/lambda.zip"
+  lambda_binary_hash_url     = "${local.default_lambda_binary_url}.base64sha256"
+  downloaded_lambda_zip_path = "${path.module}/.build/lambda.zip"
+  local_lambda_zip_path      = coalesce(var.lambda_binary_path, local.downloaded_lambda_zip_path)
+  local_lambda_source_hash = var.lambda_binary_path != null ? (
+    filebase64sha256(var.lambda_binary_path)
+    ) : (
+    fileexists(local.downloaded_lambda_zip_path) ? filebase64sha256(local.downloaded_lambda_zip_path) : null
+  )
+  downloaded_lambda_source_hash = one(data.http.lambda_binary_hash[*].response_body)
+  lambda_source_hash            = var.build_lambda_locally || var.lambda_binary_path != null ? local.local_lambda_source_hash : trimspace(local.downloaded_lambda_source_hash)
+}
 
-  triggers = {
-    url = var.lambda_binary_url
-  }
+data "http" "lambda_binary_hash" {
+  count = var.build_lambda_locally || var.lambda_binary_path != null ? 0 : 1
+  url   = local.lambda_binary_hash_url
+}
+
+resource "terraform_data" "download_lambda" {
+  count = var.build_lambda_locally || var.lambda_binary_path != null ? 0 : 1
+
+  triggers_replace = [
+    local.default_lambda_binary_url,
+    local.lambda_binary_hash_url,
+    trimspace(local.downloaded_lambda_source_hash),
+  ]
 
   provisioner "local-exec" {
-    command = "test -f ${path.module}/.build/lambda.zip || (mkdir -p ${path.module}/.build && curl -sfL -o ${path.module}/.build/lambda.zip ${var.lambda_binary_url})"
+    command = <<-EOT
+      mkdir -p "${path.module}/.build" && \
+      curl -sfL -o "${local.downloaded_lambda_zip_path}" "${local.default_lambda_binary_url}"
+    EOT
   }
 }
 
@@ -34,7 +59,10 @@ resource "null_resource" "build_lambda" {
 
   triggers = {
     source_hash = sha256(join("", [
-      for f in sort(fileset("${path.module}/cmd/lambda", "*.go")) :
+      for f in sort(concat(
+        tolist(fileset("${path.module}/cmd/lambda", "*.go")),
+        ["go.mod", "go.sum"],
+      )) :
       filesha256("${path.module}/cmd/lambda/${f}")
     ]))
   }
@@ -42,8 +70,9 @@ resource "null_resource" "build_lambda" {
   provisioner "local-exec" {
     command = <<-EOT
       cd ${path.module}/cmd/lambda && \
-      GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -tags lambda.norpc -ldflags='-s -w' -o bootstrap && \
-      zip lambda.zip bootstrap && \
+      GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -buildvcs=false -tags lambda.norpc -ldflags='-s -w -buildid=' -o bootstrap && \
+      TZ=UTC touch -t 198001010000 bootstrap && \
+      zip -q -X lambda.zip bootstrap && \
       mkdir -p ../../.build && \
       cp lambda.zip ../../.build/lambda.zip && \
       rm bootstrap lambda.zip
@@ -52,12 +81,12 @@ resource "null_resource" "build_lambda" {
 }
 
 resource "aws_lambda_function" "nat_zero" {
-  filename                       = "${path.module}/.build/lambda.zip"
+  filename                       = local.local_lambda_zip_path
   function_name                  = "${var.name}-nat-zero"
   handler                        = "bootstrap"
   role                           = aws_iam_role.lambda_iam_role.arn
   runtime                        = "provided.al2023"
-  source_code_hash               = fileexists("${path.module}/.build/lambda.zip") ? filebase64sha256("${path.module}/.build/lambda.zip") : null
+  source_code_hash               = local.lambda_source_hash
   architectures                  = ["arm64"]
   timeout                        = 90
   reserved_concurrent_executions = 1
@@ -66,17 +95,13 @@ resource "aws_lambda_function" "nat_zero" {
 
   environment {
     variables = {
-      NAT_TAG_KEY       = var.nat_tag_key
-      NAT_TAG_VALUE     = var.nat_tag_value
-      IGNORE_TAG_KEY    = var.ignore_tag_key
-      IGNORE_TAG_VALUE  = var.ignore_tag_value
-      TARGET_VPC_ID     = var.vpc_id
-      AMI_OWNER_ACCOUNT = var.use_fck_nat_ami ? "568608671756" : var.custom_ami_owner
-      AMI_NAME_PATTERN  = var.use_fck_nat_ami ? "fck-nat-al2023-*-arm64-*" : var.custom_ami_name_pattern
+      NAT_TAG_KEY      = var.nat_tag_key
+      NAT_TAG_VALUE    = var.nat_tag_value
+      IGNORE_TAG_KEY   = var.ignore_tag_key
+      IGNORE_TAG_VALUE = var.ignore_tag_value
+      TARGET_VPC_ID    = var.vpc_id
       CONFIG_VERSION = sha256(join(",", [
-        var.use_fck_nat_ami ? "568608671756" : var.custom_ami_owner,
-        var.use_fck_nat_ami ? "fck-nat-al2023-*-arm64-*" : var.custom_ami_name_pattern,
-        coalesce(var.ami_id, "none"),
+        coalesce(local.effective_ami_id, "missing"),
         var.instance_type,
         var.market_type,
         tostring(var.block_device_size),
@@ -85,7 +110,14 @@ resource "aws_lambda_function" "nat_zero" {
     }
   }
 
-  depends_on = [time_sleep.lambda_ready, null_resource.download_lambda, null_resource.build_lambda]
+  lifecycle {
+    precondition {
+      condition     = !(var.build_lambda_locally && var.lambda_binary_path != null)
+      error_message = "build_lambda_locally and lambda_binary_path cannot be used together."
+    }
+  }
+
+  depends_on = [time_sleep.lambda_ready, terraform_data.download_lambda, null_resource.build_lambda]
 }
 
 resource "aws_lambda_function_event_invoke_config" "nat_zero_invoke_config" {

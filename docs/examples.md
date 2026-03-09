@@ -55,7 +55,7 @@ module "nat_zero" {
   private_route_table_ids     = module.vpc.private_route_table_ids
   private_subnets_cidr_blocks = module.vpc.private_subnets_cidr_blocks
 
-  # Defaults: t4g.nano, fck-nat AMI, on-demand
+  # Defaults: t4g.nano, promoted public nat-zero AMI track, on-demand
   # Uncomment for spot instances:
   # market_type = "spot"
 
@@ -92,7 +92,7 @@ module "nat_zero" {
 
 ## Custom AMI
 
-To use a custom AMI instead of the default fck-nat AMI:
+To use your own NAT Zero-compatible AMI instead of the default public nat-zero AMI:
 
 ```hcl
 module "nat_zero" {
@@ -100,9 +100,8 @@ module "nat_zero" {
 
   # ... required variables ...
 
-  use_fck_nat_ami       = false
-  custom_ami_owner      = "123456789012"
-  custom_ami_name_pattern = "my-nat-ami-*"
+  ami_owner_account = "123456789012"
+  ami_name_pattern  = "my-nat-ami-*"
 }
 ```
 
@@ -118,6 +117,8 @@ module "nat_zero" {
 }
 ```
 
+Custom AMIs must preserve nat-zero's deterministic dual-ENI boot model. `fck-nat` AMIs are not compatible because they query IMDS/AWS during bootstrap to infer ENI attachment, while nat-zero relies on the launch template ENIs being known up front and the EIP being attached later by the reconciler.
+
 ## Disable Root Volume Encryption
 
 The root EBS volume is encrypted by default. To disable encryption (e.g., for environments without compliance requirements):
@@ -132,9 +133,28 @@ module "nat_zero" {
 }
 ```
 
+## Lambda Code Paths
+
+This repo intentionally supports exactly three Lambda code paths:
+
+1. Default release path: do nothing extra. The module downloads the versioned `lambda.zip` and `lambda.zip.base64sha256` that match the tagged module release.
+   The checksum file exists so Terraform can know `source_code_hash` during `plan`, before it downloads the zip during `apply`. When the published checksum changes, Terraform can see the upstream Lambda code change in the plan.
+2. Pre-built local zip: pass `lambda_binary_path` to test an unreleased branch or supply your own artifact.
+3. Build during apply: set `build_lambda_locally = true` for local development only.
+
+## Recommended Usage By Audience
+
+| Audience | Recommended module ref | Recommended Lambda path | Why |
+|----------|------------------------|-------------------------|-----|
+| Normal end users | Release tag such as `?ref=v0.4.0` | Default release artifact | Stable module code, stable versioned Lambda artifact, and clean plan/apply behavior |
+| CI, branch testing, unreleased validation | Branch or commit ref | `lambda_binary_path` | Lets Terraform see Lambda code changes during plan before the branch has been released |
+| Local module development | Working tree | `build_lambda_locally = true` | Fastest iteration loop while changing Go code inside this repo |
+
+`ref=main` is fine for development, but it is not the stable consumer path. If `main` has unreleased Go changes, the default Lambda artifact still comes from the latest tagged release until the next release is published.
+
 ## Building Lambda Locally
 
-For development or if you want to build from source:
+For development only, or if you explicitly want Terraform to build from source during `terraform apply`:
 
 ```hcl
 module "nat_zero" {
@@ -146,4 +166,20 @@ module "nat_zero" {
 }
 ```
 
-Requires Go and `zip` installed locally.
+Requires Go and `zip` installed locally. This is a non-standard path and may require a second apply after code changes.
+
+## Using a Pre-built Local Lambda Zip
+
+For CI, branch testing, or if you want plan-time Lambda diffs without waiting for a release, build the zip outside Terraform and pass it in directly:
+
+```hcl
+module "nat_zero" {
+  source = "github.com/MachineDotDev/nat-zero"
+
+  # ... required variables ...
+
+  lambda_binary_path = "${path.module}/.build/lambda.zip"
+}
+```
+
+This is the right way to test an unreleased branch when the branch includes Lambda code changes. The default downloaded Lambda zip is pinned to the latest tagged module release.

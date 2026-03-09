@@ -369,16 +369,12 @@ func TestReleaseEIPs(t *testing.T) {
 // --- createNAT() ---
 
 func TestCreateNAT(t *testing.T) {
-	setupLTAndAMI := func(mock *mockEC2) {
+	setupLT := func(mock *mockEC2) {
 		mock.DescribeLaunchTemplatesFn = func(ctx context.Context, params *ec2.DescribeLaunchTemplatesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeLaunchTemplatesOutput, error) {
 			return &ec2.DescribeLaunchTemplatesOutput{
-				LaunchTemplates: []ec2types.LaunchTemplate{{LaunchTemplateId: aws.String("lt-123")}},
-			}, nil
-		}
-		mock.DescribeLaunchTemplateVersionsFn = func(ctx context.Context, params *ec2.DescribeLaunchTemplateVersionsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeLaunchTemplateVersionsOutput, error) {
-			return &ec2.DescribeLaunchTemplateVersionsOutput{
-				LaunchTemplateVersions: []ec2types.LaunchTemplateVersion{{
-					LaunchTemplateId: aws.String("lt-123"), VersionNumber: aws.Int64(1),
+				LaunchTemplates: []ec2types.LaunchTemplate{{
+					LaunchTemplateId:    aws.String("lt-123"),
+					LatestVersionNumber: aws.Int64(1),
 				}},
 			}, nil
 		}
@@ -386,16 +382,7 @@ func TestCreateNAT(t *testing.T) {
 
 	t.Run("happy path", func(t *testing.T) {
 		mock := &mockEC2{}
-		setupLTAndAMI(mock)
-		mock.DescribeImagesFn = func(ctx context.Context, params *ec2.DescribeImagesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeImagesOutput, error) {
-			return &ec2.DescribeImagesOutput{
-				Images: []ec2types.Image{{
-					ImageId:      aws.String("ami-fcknat"),
-					Name:         aws.String("fck-nat-al2023-1.0-arm64-20240101"),
-					CreationDate: aws.String("2024-01-01T00:00:00.000Z"),
-				}},
-			}, nil
-		}
+		setupLT(mock)
 		mock.RunInstancesFn = func(ctx context.Context, params *ec2.RunInstancesInput, optFns ...func(*ec2.Options)) (*ec2.RunInstancesOutput, error) {
 			return &ec2.RunInstancesOutput{
 				Instances: []ec2types.Instance{{InstanceId: aws.String("i-new1")}},
@@ -405,6 +392,58 @@ func TestCreateNAT(t *testing.T) {
 		result := h.createNAT(context.Background(), testAZ, testVPC)
 		if result != "i-new1" {
 			t.Errorf("expected i-new1, got %s", result)
+		}
+	})
+
+	t.Run("falls back to default version when latest version missing", func(t *testing.T) {
+		mock := &mockEC2{}
+		mock.DescribeLaunchTemplatesFn = func(ctx context.Context, params *ec2.DescribeLaunchTemplatesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeLaunchTemplatesOutput, error) {
+			return &ec2.DescribeLaunchTemplatesOutput{
+				LaunchTemplates: []ec2types.LaunchTemplate{{
+					LaunchTemplateId:     aws.String("lt-123"),
+					DefaultVersionNumber: aws.Int64(2),
+				}},
+			}, nil
+		}
+		mock.RunInstancesFn = func(ctx context.Context, params *ec2.RunInstancesInput, optFns ...func(*ec2.Options)) (*ec2.RunInstancesOutput, error) {
+			if params.LaunchTemplate == nil || aws.ToString(params.LaunchTemplate.Version) != "2" {
+				t.Fatalf("expected launch template version 2, got %#v", params.LaunchTemplate)
+			}
+			return &ec2.RunInstancesOutput{
+				Instances: []ec2types.Instance{{InstanceId: aws.String("i-new2")}},
+			}, nil
+		}
+		h := newTestHandler(mock)
+		result := h.createNAT(context.Background(), testAZ, testVPC)
+		if result != "i-new2" {
+			t.Errorf("expected i-new2, got %s", result)
+		}
+	})
+
+	t.Run("uses template without explicit version when metadata missing", func(t *testing.T) {
+		mock := &mockEC2{}
+		mock.DescribeLaunchTemplatesFn = func(ctx context.Context, params *ec2.DescribeLaunchTemplatesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeLaunchTemplatesOutput, error) {
+			return &ec2.DescribeLaunchTemplatesOutput{
+				LaunchTemplates: []ec2types.LaunchTemplate{{
+					LaunchTemplateId: aws.String("lt-123"),
+				}},
+			}, nil
+		}
+		mock.RunInstancesFn = func(ctx context.Context, params *ec2.RunInstancesInput, optFns ...func(*ec2.Options)) (*ec2.RunInstancesOutput, error) {
+			if params.LaunchTemplate == nil || aws.ToString(params.LaunchTemplate.LaunchTemplateId) != "lt-123" {
+				t.Fatalf("expected launch template id lt-123, got %#v", params.LaunchTemplate)
+			}
+			if params.LaunchTemplate.Version != nil {
+				t.Fatalf("expected launch template version to be omitted, got %q", aws.ToString(params.LaunchTemplate.Version))
+			}
+			return &ec2.RunInstancesOutput{
+				Instances: []ec2types.Instance{{InstanceId: aws.String("i-new3")}},
+			}, nil
+		}
+		h := newTestHandler(mock)
+		result := h.createNAT(context.Background(), testAZ, testVPC)
+		if result != "i-new3" {
+			t.Errorf("expected i-new3, got %s", result)
 		}
 	})
 
@@ -422,10 +461,7 @@ func TestCreateNAT(t *testing.T) {
 
 	t.Run("run instances fails", func(t *testing.T) {
 		mock := &mockEC2{}
-		setupLTAndAMI(mock)
-		mock.DescribeImagesFn = func(ctx context.Context, params *ec2.DescribeImagesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeImagesOutput, error) {
-			return &ec2.DescribeImagesOutput{Images: []ec2types.Image{}}, nil
-		}
+		setupLT(mock)
 		mock.RunInstancesFn = func(ctx context.Context, params *ec2.RunInstancesInput, optFns ...func(*ec2.Options)) (*ec2.RunInstancesOutput, error) {
 			return nil, fmt.Errorf("InsufficientInstanceCapacity: No capacity")
 		}
@@ -438,10 +474,7 @@ func TestCreateNAT(t *testing.T) {
 
 	t.Run("config version tag included", func(t *testing.T) {
 		mock := &mockEC2{}
-		setupLTAndAMI(mock)
-		mock.DescribeImagesFn = func(ctx context.Context, params *ec2.DescribeImagesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeImagesOutput, error) {
-			return &ec2.DescribeImagesOutput{Images: []ec2types.Image{}}, nil
-		}
+		setupLT(mock)
 		mock.RunInstancesFn = func(ctx context.Context, params *ec2.RunInstancesInput, optFns ...func(*ec2.Options)) (*ec2.RunInstancesOutput, error) {
 			if len(params.TagSpecifications) == 0 {
 				t.Error("expected TagSpecifications")

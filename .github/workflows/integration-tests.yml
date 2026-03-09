@@ -1,9 +1,24 @@
 name: Integration Tests
 
 on:
-  pull_request:
-    types: [labeled]
   workflow_dispatch:
+    inputs:
+      nat_ami_id:
+        description: Explicit NAT AMI ID to use for the integration fixture
+        required: false
+        type: string
+      updated_nat_ami_id:
+        description: Optional replacement NAT AMI ID to exercise the AMI upgrade path
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      nat_ami_id:
+        required: false
+        type: string
+      updated_nat_ami_id:
+        required: false
+        type: string
 
 concurrency:
   group: nat-zero-integration
@@ -13,11 +28,11 @@ permissions:
   id-token: write
   contents: read
 
+env:
+  TEST_NAT_AMI_ID: ${{ vars.NAT_ZERO_TEST_AMI_ID }}
+
 jobs:
   integration-test:
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      github.event.label.name == 'integration-test'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: integration
@@ -36,6 +51,24 @@ jobs:
         with:
           role-to-assume: ${{ secrets.INTEGRATION_ROLE_ARN }}
           aws-region: us-east-1
+
+      - name: Resolve NAT AMI inputs
+        env:
+          INPUT_NAT_AMI_ID: ${{ inputs.nat_ami_id }}
+          INPUT_UPDATED_NAT_AMI_ID: ${{ inputs.updated_nat_ami_id }}
+        run: |
+          nat_ami_id="${INPUT_NAT_AMI_ID:-$TEST_NAT_AMI_ID}"
+
+          if [ -z "$nat_ami_id" ]; then
+            echo "default integration NAT AMI is not configured" >&2
+            exit 1
+          fi
+
+          echo "NAT_ZERO_TEST_NAT_AMI_ID=$nat_ami_id" >> "$GITHUB_ENV"
+
+          if [ -n "$INPUT_UPDATED_NAT_AMI_ID" ]; then
+            echo "NAT_ZERO_TEST_UPDATED_NAT_AMI_ID=$INPUT_UPDATED_NAT_AMI_ID" >> "$GITHUB_ENV"
+          fi
 
       - name: Build Lambda binary
         working-directory: cmd/lambda

@@ -16,7 +16,7 @@ Integration tests require AWS credentials with permissions to manage EC2, IAM, L
 
 ## Integration Test Lifecycle
 
-The test uses [Terratest](https://terratest.gruntwork.io/) with a single `terraform apply` / `destroy` cycle and four phases:
+The test uses [Terratest](https://terratest.gruntwork.io/) with a single `terraform apply` / `destroy` cycle and five phases. Each run uses a unique `nat-test-*` module name so EventBridge, Lambda, and IAM resources do not collide across reruns.
 
 ### Phase 1: NAT Creation and Connectivity
 
@@ -41,22 +41,31 @@ The test uses [Terratest](https://terratest.gruntwork.io/) with a single `terraf
 3. Wait for NAT running with new EIP
 4. Verify connectivity
 
-### Phase 4: Cleanup Action
+### Phase 4: AMI Replacement
+
+1. Reapply the fixture with `NAT_ZERO_TEST_UPDATED_NAT_AMI_ID`
+2. Trigger reconciliation while a workload is active
+3. Verify the old NAT instance is terminated
+4. Verify the replacement NAT comes up on the new AMI and handles egress correctly
+
+### Phase 5: Cleanup Action
 
 1. Invoke Lambda with `{action: "cleanup"}`
 2. Verify all NAT instances terminated and EIPs released
 
 ### Teardown
 
-`terraform destroy` removes all Terraform-managed resources. The cleanup action (Phase 4) ensures Lambda-created NAT instances are terminated first, so ENI deletion succeeds.
+`terraform destroy` removes all Terraform-managed resources. The cleanup action (Phase 5) ensures Lambda-created NAT instances are terminated first, so ENI deletion succeeds.
 
 ## CI
 
-Integration tests run in GitHub Actions when the `integration-test` label is added to a PR. They use OIDC to assume an AWS role in a dedicated test account.
+Integration tests run in GitHub Actions when the `integration-test` label is added to a PR. A small router workflow handles the label event and then calls the reusable integration workflow. The tests use OIDC to assume an AWS role in a dedicated test account.
 
 - Concurrency: one test at a time (`cancel-in-progress: false`)
 - Timeout: 15 minutes
 - Region: us-east-1
+- Default NAT AMI: shared private test nat-zero AMI supplied via the GitHub Actions variable `NAT_ZERO_TEST_AMI_ID` unless `nat_ami_id` is supplied explicitly
+- These are integration-fixture overrides only. Normal module consumers should not set `nat_ami_id`; the module defaults to the published nat-zero AMI track.
 
 ## Orphan Detection
 
@@ -64,4 +73,4 @@ Integration tests run in GitHub Actions when the `integration-test` label is add
 
 ## Config Version Replacement
 
-The Lambda tags NAT instances with a `ConfigVersion` hash (AMI + instance type + market type + volume size + encryption). When the config changes and a workload triggers reconciliation, the Lambda terminates the outdated NAT and creates a replacement. The integration test doesn't exercise this path directly, but it's covered by unit tests.
+The Lambda tags NAT instances with a `ConfigVersion` hash (resolved AMI ID + instance type + market type + volume size + encryption). When the config changes and a workload triggers reconciliation, the Lambda terminates the outdated NAT and creates a replacement. The integration suite can now exercise this path by setting `NAT_ZERO_TEST_UPDATED_NAT_AMI_ID` before running `go test`.

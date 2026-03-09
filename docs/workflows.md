@@ -6,18 +6,19 @@ Internal reference for GitHub Actions workflows, repo rulesets, and the release 
 
 | Workflow | File | Triggers | Required Check |
 |----------|------|----------|----------------|
-| Pre-commit | `precommit.yml` | All PRs; push to `main` (filtered paths) | `precommit` |
+| Manual PR Checks | `manual-pr-checks.yml` | PR labeled `integration-test` or `nat-images` | No (router workflow) |
+| Pre-commit | `precommit.yml` | All PRs | `precommit` |
 | Go Tests | `go-tests.yml` | PRs touching `cmd/lambda/**`; push to `main` | `go-test` |
-| Integration Tests | `integration-tests.yml` | PR labeled `integration-test`; manual dispatch | `integration-test` |
+| Integration Tests | `integration-tests.yml` | Manual dispatch; reusable workflow | `integration-test` |
+| NAT Images | `nat-images.yml` | Manual dispatch; reusable workflow | No (promotion workflow) |
 | Docs | `docs.yml` | Push to `main` (filtered paths) | No (post-merge deploy) |
 | Release | `release-please.yml` | Push to `main`; manual dispatch | No (post-merge) |
 
 ## Pre-commit (`precommit.yml`)
 
-Runs the repo's `.pre-commit-config.yaml` hooks: terraform fmt, tflint, terraform-docs, Go staticcheck, etc.
+Runs the repo's `.pre-commit-config.yaml` hooks: terraform fmt/validate, tflint, terraform-docs, Go staticcheck, actionlint, shellcheck, and Packer fmt/validate.
 
 - **PR trigger**: All pull requests, all paths (no path filter).
-- **Push trigger**: Only on `main`, only when `*.tf`, `cmd/lambda/**`, `.pre-commit-config.yaml`, or `.terraform-docs.yml` change.
 - **Job name**: `precommit` (required status check for merge).
 
 ## Go Tests (`go-tests.yml`)
@@ -29,17 +30,33 @@ Runs `go test -v -race ./...` in `cmd/lambda/` (Lambda unit tests).
 - **Job name**: `go-test` (required status check for merge).
 - **Note**: Path-filtered. If a PR doesn't touch Go code, this check won't run and won't block merge (see ruleset notes below).
 
+## Manual PR Checks (`manual-pr-checks.yml`)
+
+Single entry point for expensive, manually requested PR checks.
+
+- **PR trigger**: `labeled` type only.
+- **Labels**:
+  - `integration-test` -> calls the reusable integration workflow
+  - `nat-images` -> calls the reusable NAT image workflow
+- **Why this exists**: GitHub cannot filter `pull_request:labeled` by label name up front. A single router workflow keeps that complexity in one place and prevents both heavyweight workflows from waking up on every label event.
+- **How it appears on the PR**: the called reusable jobs show up as normal PR checks under the router workflow run.
+- **One-shot labels**: the router removes the trigger label after the run is queued, so adding the same label later will trigger a fresh run again.
+
 ## Integration Tests (`integration-tests.yml`)
 
 Full end-to-end test: deploys real AWS infrastructure via Terratest, exercises the Lambda lifecycle (create NAT, scale-down, restart, cleanup), then destroys everything.
 
-- **PR trigger**: `labeled` type only. Runs when the `integration-test` label is added.
 - **Manual trigger**: `workflow_dispatch`.
-- **Condition**: `github.event.label.name == 'integration-test'` (or manual dispatch).
+- **Reusable trigger**: `workflow_call`.
 - **Concurrency**: Group `nat-zero-integration`, `cancel-in-progress: false`. Only one integration test runs at a time; new ones queue.
 - **Environment**: `integration` (holds the `INTEGRATION_ROLE_ARN` secret for OIDC).
 - **Timeout**: 15 minutes.
 - **Job name**: `integration-test` (required status check for merge).
+- **Optional inputs**:
+  - `nat_ami_id` to force the integration fixture onto a specific NAT AMI. If omitted, the workflow uses the shared private test AMI from the GitHub Actions variable `NAT_ZERO_TEST_AMI_ID`.
+  - `updated_nat_ami_id` to exercise the AMI replacement path after a second `terraform apply`.
+
+These inputs are test-only fixture controls. Normal module consumers should omit them and use the published nat-zero AMI defaults.
 
 ### Steps
 
@@ -47,6 +64,22 @@ Full end-to-end test: deploys real AWS infrastructure via Terratest, exercises t
 2. Assume AWS role via OIDC (`aws-actions/configure-aws-credentials`).
 3. Build the Lambda binary from source (`cmd/lambda/` -> `.build/lambda.zip`).
 4. Run `go test -v -timeout 10m -count=1` in `tests/integration/`.
+
+## NAT Images (`nat-images.yml`)
+
+Manual promotion workflow for the default public nat-zero AMI.
+
+1. Build the AMI with Packer in the chosen source region.
+2. Let Packer privately copy it to the regions listed in `ami/nat-zero-private-all-regions.pkrvars.hcl`.
+3. Run one us-east-1 integration gate on a single stack:
+   - deploy from the shared private test NAT AMI in `NAT_ZERO_TEST_AMI_ID`
+   - exercise the normal NAT lifecycle
+   - reapply the module with the new AMI
+   - verify the old NAT is replaced and the new NAT works
+4. After the integration gates pass, run a small publish script that opens launch permissions for the copied AMIs.
+5. Open a PR that updates the Terraform defaults (`ami_owner_account`, `ami_name_pattern`) so merge + release-please can publish the new module version.
+
+For pre-merge validation on a branch, add the `nat-images` label to the PR. The router workflow calls `nat-images.yml` as a reusable workflow, which uses the GitHub Actions variable `NAT_ZERO_AMI_BUILD_SUBNET_ID`, runs the build and integration gates on the PR branch, and intentionally skips the public-sharing and promotion-PR jobs.
 
 ## Docs (`docs.yml`)
 
@@ -85,9 +118,11 @@ Runs `googleapis/release-please-action@v4` with:
 Only runs when `release_created == 'true'` (i.e., the push that merges a release PR).
 
 1. Cross-compiles the Go Lambda for `linux/arm64`.
-2. Zips as `lambda.zip`.
-3. **Uploads to the versioned release** (e.g., `v0.1.0`).
-4. **Creates/updates a rolling `nat-zero-lambda-latest` release** with the same zip. This provides a stable URL for the module's default `lambda_binary_url`.
+2. Creates a deterministic `lambda.zip`.
+3. Writes `lambda.zip.base64sha256`, containing the base64-encoded SHA256 for the zip.
+4. **Uploads the zip and checksum to the versioned release** (e.g., `v0.1.0`).
+
+That is the full release artifact flow. There is no second workflow that edits the release PR, and there is no rolling "latest" Lambda artifact to keep in sync.
 
 ### Changelog sections
 
@@ -104,16 +139,16 @@ Only runs when `release_created == 'true'` (i.e., the push that merges a release
 
 ### `main` branch ruleset
 
-- **No direct push**: creation, update, deletion, and non-fast-forward all blocked.
 - **PRs required** with:
-  - 1 approving review
+  - 0 required approvals
   - Stale reviews dismissed on push
-  - Last push approval required (reviewer cannot be the person who pushed the last commit)
   - All review threads must be resolved
-  - **Squash merge only**
-- **Required status checks**: `precommit`, `go-test`, `integration-test`
-  - `strict_required_status_checks_policy: false` -- checks that don't run (path filtering / label gating) won't block merge.
-- **Bypass**: Admin role can bypass always.
+- **Required status checks**: `precommit`, `go-test`
+  - strict mode enabled, so required checks must be up to date with `main`
+- **Linear history required**
+- **No force push**
+- **No branch deletion**
+- **Bypass**: Admin role can bypass because `enforce_admins` is disabled.
 
 ### `tags` ruleset
 
@@ -127,8 +162,9 @@ Only runs when `release_created == 'true'` (i.e., the push that merges a release
 Open PR
   -> precommit runs (always)
   -> go-test runs (if cmd/lambda/** changed)
-  -> Add "integration-test" label -> integration tests run against real AWS
-  -> 1 approval + threads resolved
+  -> Add "integration-test" label -> router calls integration tests
+  -> Add "nat-images" label -> router calls the NAT image build/integration gate
+  -> threads resolved
   -> Squash merge to main
 
 Post-merge to main:
@@ -137,5 +173,22 @@ Post-merge to main:
 
 Merge release PR:
   -> release-please creates GitHub Release + tag
-  -> build-lambda uploads lambda.zip to release + rolling latest
+  -> build-lambda uploads lambda.zip + lambda.zip.base64sha256 to that versioned release
 ```
+
+## Lambda Code Paths
+
+The module intentionally supports exactly three ways to supply Lambda code:
+
+1. Default release artifact
+   - Best for normal users
+   - Terraform downloads the versioned `lambda.zip` and reads the matching `lambda.zip.base64sha256`
+   - The checksum file lets Terraform know `source_code_hash` during `plan`, before the zip is downloaded during `apply`
+   - A changed published checksum shows up as a Lambda code change in `terraform plan`
+2. Pre-built local zip via `lambda_binary_path`
+   - Best for CI, branch testing, or custom unreleased binaries
+   - Terraform hashes the local file during plan
+3. Apply-time build via `build_lambda_locally = true`
+   - Best for local development only
+   - Requires Go and `zip`
+   - May require a second apply after Lambda code changes

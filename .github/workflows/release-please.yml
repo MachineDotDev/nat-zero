@@ -37,22 +37,15 @@ jobs:
           go-version-file: cmd/lambda/go.mod
 
       - name: Build
-        run: GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -tags lambda.norpc -ldflags='-s -w' -o bootstrap
+        run: GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -buildvcs=false -tags lambda.norpc -ldflags='-s -w -buildid=' -o bootstrap
 
       - name: Package
-        run: zip lambda.zip bootstrap
+        run: |
+          TZ=UTC touch -t 198001010000 bootstrap
+          zip -q -X lambda.zip bootstrap
+          openssl dgst -sha256 -binary lambda.zip | openssl base64 -A > lambda.zip.base64sha256
 
       - name: Upload to versioned release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ needs.release-please.outputs.tag_name }}" lambda.zip --clobber
-
-      - name: Update rolling latest release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release create nat-zero-lambda-latest \
-            --title "nat-zero Lambda (latest)" \
-            --notes "Auto-built Go Lambda binary from ${{ needs.release-please.outputs.tag_name }}" \
-            --latest=false 2>/dev/null || true
-          gh release upload nat-zero-lambda-latest lambda.zip --clobber
+        run: gh release upload "${{ needs.release-please.outputs.tag_name }}" lambda.zip lambda.zip.base64sha256 --clobber

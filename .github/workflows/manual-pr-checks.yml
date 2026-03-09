@@ -1,0 +1,43 @@
+name: Manual PR Checks
+
+on:
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: write
+  id-token: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  integration:
+    if: ${{ github.event.label.name == 'integration-test' }}
+    uses: ./.github/workflows/integration-tests.yml
+    secrets: inherit
+
+  nat-images:
+    if: ${{ github.event.label.name == 'nat-images' }}
+    uses: ./.github/workflows/nat-images.yml
+    secrets: inherit
+
+  clear-trigger-label:
+    if: >-
+      always() &&
+      (github.event.label.name == 'integration-test' || github.event.label.name == 'nat-images')
+    needs:
+      - integration
+      - nat-images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove trigger label
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LABEL_NAME: ${{ github.event.label.name }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          gh api \
+            --method DELETE \
+            "repos/$REPOSITORY/issues/$PR_NUMBER/labels/$LABEL_NAME"

@@ -11,6 +11,10 @@ repos:
       - id: detect-private-key
       - id: detect-aws-credentials
         args: ["--allow-missing-credentials"]
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.8
+    hooks:
+      - id: actionlint
   - repo: https://github.com/TekWizely/pre-commit-golang
     rev: v1.0.0-rc.1
     hooks:
@@ -30,6 +34,23 @@ repos:
         files: '\.go$'
         exclude: "tests/integration/"
         pass_filenames: false
+      - id: shellcheck
+        name: shellcheck
+        language: system
+        entry: shellcheck
+        files: '(^scripts/.*\.sh$|^ami/.*\.sh$)'
+      - id: packer-fmt
+        name: packer fmt
+        language: system
+        entry: bash -c 'cd ami && packer fmt -check -diff .'
+        files: '^ami/.*\.(pkr\.hcl|hcl)$'
+        pass_filenames: false
+      - id: packer-validate
+        name: packer validate
+        language: system
+        entry: bash -c 'tmp="$(mktemp).pkrvars.hcl" && trap '\''rm -f "$tmp"'\'' EXIT && bash scripts/render_packer_ami_regions.sh ami/nat-zero-private-all-regions.pkrvars.hcl us-east-1 "$tmp" && cd ami && packer init nat-zero.pkr.hcl >/dev/null && packer validate -var-file "$tmp" -var "subnet_id=subnet-00000000000000000" nat-zero.pkr.hcl'
+        files: '^ami/.*$'
+        pass_filenames: false
   - repo: https://github.com/zricethezav/gitleaks
     rev: v8.16.4
     hooks:
@@ -38,6 +59,7 @@ repos:
     rev: v1.77.0
     hooks:
       - id: terraform_fmt
+      - id: terraform_validate
       - id: terraform_tflint
   - repo: https://github.com/terraform-docs/terraform-docs
     rev: "v0.16.0"

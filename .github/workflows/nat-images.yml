@@ -1,0 +1,294 @@
+name: NAT Images
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_subnet_id:
+        description: Public subnet ID to use for the Packer builder instance
+        required: false
+        type: string
+      source_region:
+        description: Region where the AMI is built before being copied globally
+        required: false
+        default: us-east-1
+        type: string
+      run_integration_gate:
+        description: Run the us-east-1 integration gates before publishing and promoting the AMI
+        required: false
+        default: true
+        type: boolean
+  workflow_call:
+    inputs:
+      build_subnet_id:
+        required: false
+        type: string
+      source_region:
+        required: false
+        type: string
+      run_integration_gate:
+        required: false
+        default: true
+        type: boolean
+
+concurrency:
+  group: nat-zero-ami
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PACKER_REGIONS_FILE: ami/nat-zero-private-all-regions.pkrvars.hcl
+
+jobs:
+  resolve-inputs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      build_subnet_id: ${{ steps.resolve.outputs.build_subnet_id }}
+      source_region: ${{ steps.resolve.outputs.source_region }}
+      run_integration_gate: ${{ steps.resolve.outputs.run_integration_gate }}
+      should_publish: ${{ steps.resolve.outputs.should_publish }}
+    steps:
+      - name: Resolve workflow inputs
+        id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_BUILD_SUBNET_ID: ${{ inputs.build_subnet_id }}
+          INPUT_SOURCE_REGION: ${{ inputs.source_region }}
+          INPUT_RUN_INTEGRATION_GATE: ${{ inputs.run_integration_gate }}
+          DEFAULT_BUILD_SUBNET_ID: ${{ vars.NAT_ZERO_AMI_BUILD_SUBNET_ID }}
+        run: |
+          should_publish=true
+
+          if [ "$EVENT_NAME" = "workflow_call" ]; then
+            should_publish=false
+          fi
+
+          build_subnet_id="${INPUT_BUILD_SUBNET_ID:-$DEFAULT_BUILD_SUBNET_ID}"
+          source_region="${INPUT_SOURCE_REGION:-us-east-1}"
+          run_integration_gate="${INPUT_RUN_INTEGRATION_GATE:-true}"
+
+          if [ -z "$build_subnet_id" ]; then
+            echo "build_subnet_id input is required unless vars.NAT_ZERO_AMI_BUILD_SUBNET_ID is set" >&2
+            exit 1
+          fi
+
+          {
+            echo "build_subnet_id=$build_subnet_id"
+            echo "source_region=$source_region"
+            echo "run_integration_gate=$run_integration_gate"
+            echo "should_publish=$should_publish"
+          } >> "$GITHUB_OUTPUT"
+
+  build-and-copy:
+    needs: resolve-inputs
+    runs-on: ubuntu-latest
+    environment: ami-build
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      ami_name: ${{ steps.metadata.outputs.ami_name }}
+      owner_account_id: ${{ steps.metadata.outputs.owner_account_id }}
+      source_ami_id: ${{ steps.build.outputs.source_ami_id }}
+      test_ami_id: ${{ steps.test-ami.outputs.test_ami_id }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: hashicorp/setup-packer@1aa358be5cf73883762b302a3a03abd66e75b232 # v3
+
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ secrets.AMI_BUILD_ROLE_ARN }}
+          aws-region: ${{ needs.resolve-inputs.outputs.source_region }}
+
+      - name: Prepare Packer copy regions
+        id: regions
+        run: |
+          bash scripts/render_packer_ami_regions.sh \
+            "$PACKER_REGIONS_FILE" \
+            "${{ needs.resolve-inputs.outputs.source_region }}" \
+            "$RUNNER_TEMP/nat-zero-copy-regions.pkrvars.hcl"
+
+          echo "var_file=$RUNNER_TEMP/nat-zero-copy-regions.pkrvars.hcl" >> "$GITHUB_OUTPUT"
+
+      - name: Build AMI
+        id: build
+        working-directory: ami
+        env:
+          SOURCE_REGION: ${{ needs.resolve-inputs.outputs.source_region }}
+        run: |
+          rm -f manifest.json
+          packer init nat-zero.pkr.hcl
+          packer build \
+            -color=false \
+            -var-file "${{ steps.regions.outputs.var_file }}" \
+            -var "region=${{ needs.resolve-inputs.outputs.source_region }}" \
+            -var "subnet_id=${{ needs.resolve-inputs.outputs.build_subnet_id }}" \
+            nat-zero.pkr.hcl
+
+          source_ami_id="$(
+            jq -er '.builds[-1].artifact_id' manifest.json |
+              tr ',' '\n' |
+              awk -F: -v source_region="$SOURCE_REGION" '$1 == source_region && $2 != "" { print $2; exit }'
+          )"
+          if [ -z "$source_ami_id" ] || [ "$source_ami_id" = "null" ]; then
+            echo "failed to determine source AMI ID after packer build" >&2
+            exit 1
+          fi
+
+          echo "source_ami_id=$source_ami_id" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve AMI metadata
+        id: metadata
+        env:
+          SOURCE_AMI_ID: ${{ steps.build.outputs.source_ami_id }}
+        run: |
+          owner_account_id="$(aws sts get-caller-identity --query 'Account' --output text)"
+          ami_name="$(aws ec2 describe-images --region "${{ needs.resolve-inputs.outputs.source_region }}" --image-ids "$SOURCE_AMI_ID" --query 'Images[0].Name' --output text)"
+
+          echo "owner_account_id=$owner_account_id" >> "$GITHUB_OUTPUT"
+          echo "ami_name=$ami_name" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve us-east-1 test AMI
+        id: test-ami
+        env:
+          AMI_NAME: ${{ steps.metadata.outputs.ami_name }}
+          OWNER_ACCOUNT_ID: ${{ steps.metadata.outputs.owner_account_id }}
+          SOURCE_AMI_ID: ${{ steps.build.outputs.source_ami_id }}
+        run: |
+          if [ "${{ needs.resolve-inputs.outputs.source_region }}" = "us-east-1" ]; then
+            test_ami_id="$SOURCE_AMI_ID"
+          else
+            test_ami_id="$(aws ec2 describe-images \
+              --region us-east-1 \
+              --owners "$OWNER_ACCOUNT_ID" \
+              --filters "Name=name,Values=$AMI_NAME" "Name=state,Values=available" \
+              --query 'Images[0].ImageId' \
+              --output text)"
+          fi
+
+          if [ -z "$test_ami_id" ] || [ "$test_ami_id" = "None" ]; then
+            echo "failed to resolve the us-east-1 AMI copy for $AMI_NAME" >&2
+            exit 1
+          fi
+
+          echo "test_ami_id=$test_ami_id" >> "$GITHUB_OUTPUT"
+
+  integration:
+    if: ${{ needs.resolve-inputs.outputs.run_integration_gate == 'true' }}
+    needs:
+      - resolve-inputs
+      - build-and-copy
+    uses: ./.github/workflows/integration-tests.yml
+    secrets: inherit
+    with:
+      nat_ami_id: ${{ vars.NAT_ZERO_TEST_AMI_ID }}
+      updated_nat_ami_id: ${{ needs.build-and-copy.outputs.test_ami_id }}
+
+  publish-public:
+    needs:
+      - resolve-inputs
+      - build-and-copy
+      - integration
+    if: >-
+      always() &&
+      needs.resolve-inputs.outputs.should_publish == 'true' &&
+      needs.build-and-copy.result == 'success' &&
+      (
+        needs.resolve-inputs.outputs.run_integration_gate != 'true' ||
+        needs.integration.result == 'success'
+      )
+    runs-on: ubuntu-latest
+    environment: ami-build
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ secrets.AMI_BUILD_ROLE_ARN }}
+          aws-region: ${{ needs.resolve-inputs.outputs.source_region }}
+
+      - name: Make copied AMIs public
+        env:
+          AMI_NAME: ${{ needs.build-and-copy.outputs.ami_name }}
+          OWNER_ACCOUNT_ID: ${{ needs.build-and-copy.outputs.owner_account_id }}
+        run: |
+          bash scripts/publish_ami_public.sh \
+            "$OWNER_ACCOUNT_ID" \
+            "$AMI_NAME" \
+            "${{ needs.resolve-inputs.outputs.source_region }}" \
+            "$PACKER_REGIONS_FILE"
+
+  open-promotion-pr:
+    needs:
+      - resolve-inputs
+      - build-and-copy
+      - publish-public
+    if: ${{ needs.resolve-inputs.outputs.should_publish == 'true' && needs.publish-public.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_wrapper: false
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: cmd/lambda/go.mod
+
+      - name: Install pre-commit
+        run: python -m pip install --upgrade pre-commit
+
+      - name: Update promoted AMI defaults
+        env:
+          AMI_NAME: ${{ needs.build-and-copy.outputs.ami_name }}
+          OWNER_ACCOUNT_ID: ${{ needs.build-and-copy.outputs.owner_account_id }}
+        run: |
+          bash scripts/update_ami_defaults.sh "$OWNER_ACCOUNT_ID" "$AMI_NAME"
+          terraform fmt -recursive
+          pre-commit run terraform-docs-go --all-files
+
+      - name: Create or update promotion PR
+        env:
+          AMI_NAME: ${{ needs.build-and-copy.outputs.ami_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          branch_name="automation/promote-nat-zero-ami-$(tr -cs '[:alnum:]' '-' <<<"$AMI_NAME" | sed 's/^-//; s/-$//' | tr '[:upper:]' '[:lower:]')"
+          commit_title="feat: promote nat-zero AMI ${AMI_NAME}"
+          pr_title="$commit_title"
+          pr_body=$'Promotes the default nat-zero AMI after the automated Packer build, global copy, and us-east-1 integration gates passed.\n\nSquash-merge this PR to preserve the `feat:` title so release-please cuts the next module release PR.'
+
+          if git diff --quiet; then
+            echo "no default changes detected; nothing to promote"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git checkout -B "$branch_name"
+          git add variables.tf README.md docs/reference.md
+          git commit -m "$commit_title"
+          git push --force --set-upstream origin "$branch_name"
+
+          pr_number="$(gh pr list --head "$branch_name" --json number --jq '.[0].number')"
+          if [ -n "$pr_number" ]; then
+            gh pr edit "$pr_number" --title "$pr_title" --body "$pr_body"
+          else
+            gh pr create --base main --head "$branch_name" --title "$pr_title" --body "$pr_body"
+          fi

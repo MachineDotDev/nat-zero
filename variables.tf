@@ -68,29 +68,22 @@ variable "encrypt_root_volume" {
   description = "Encrypt the root EBS volume."
 }
 
-# AMI configuration
-variable "use_fck_nat_ami" {
-  type        = bool
-  default     = true
-  description = "Use the public fck-nat AMI. Set to false to use a custom AMI."
-}
-
 variable "ami_id" {
   type        = string
   default     = null
   description = "Explicit AMI ID to use (overrides AMI lookup entirely)"
 }
 
-variable "custom_ami_owner" {
+variable "ami_owner_account" {
   type        = string
-  default     = null
-  description = "AMI owner account ID when use_fck_nat_ami is false"
+  default     = "590144423513"
+  description = "Owner account ID used when resolving the default nat-zero AMI by name pattern. Override this to use your own shared AMI."
 }
 
-variable "custom_ami_name_pattern" {
+variable "ami_name_pattern" {
   type        = string
-  default     = null
-  description = "AMI name pattern when use_fck_nat_ami is false"
+  default     = "nat-zero-al2023-minimal-arm64-20260306-064438"
+  description = "AMI name pattern used when resolving the default nat-zero AMI. Override this to use your own shared AMI."
 }
 
 variable "nat_tag_key" {
@@ -143,11 +136,11 @@ variable "log_retention_days" {
 variable "build_lambda_locally" {
   type        = bool
   default     = false
-  description = "Build the Lambda binary from Go source instead of downloading a pre-compiled release. Requires Go and zip installed locally."
+  description = "Build the Lambda binary from Go source during apply instead of downloading a pre-compiled release. This is primarily for local development and may require a second apply after code changes."
 }
 
-variable "lambda_binary_url" {
+variable "lambda_binary_path" {
   type        = string
-  default     = "https://github.com/MachineDotDev/nat-zero/releases/download/nat-zero-lambda-latest/lambda.zip"
-  description = "URL to the pre-compiled Go Lambda zip. Updated automatically by CI."
+  default     = null
+  description = "Optional path to a pre-built Lambda zip on disk. Use this to build the artifact outside Terraform and avoid apply-time compilation."
 }

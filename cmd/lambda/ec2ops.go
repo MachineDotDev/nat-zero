@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"sort"
 	"strings"
 	"time"
 
@@ -321,33 +320,6 @@ func (h *Handler) isCurrentConfig(inst *Instance) bool {
 
 // --- NAT lifecycle helpers ---
 
-func (h *Handler) resolveAMI(ctx context.Context) string {
-	defer timed("resolve_ami")()
-	resp, err := h.EC2.DescribeImages(ctx, &ec2.DescribeImagesInput{
-		Owners: []string{h.AMIOwner},
-		Filters: []ec2types.Filter{
-			{Name: aws.String("name"), Values: []string{h.AMIPattern}},
-			{Name: aws.String("state"), Values: []string{"available"}},
-		},
-	})
-	if err != nil {
-		log.Printf("AMI lookup failed, using launch template default: %v", err)
-		return ""
-	}
-	if len(resp.Images) == 0 {
-		return ""
-	}
-
-	images := resp.Images
-	sort.Slice(images, func(i, j int) bool {
-		return aws.ToString(images[i].CreationDate) > aws.ToString(images[j].CreationDate)
-	})
-	ami := images[0]
-	amiID := aws.ToString(ami.ImageId)
-	log.Printf("Using AMI %s (%s)", amiID, aws.ToString(ami.Name))
-	return amiID
-}
-
 func (h *Handler) resolveLT(ctx context.Context, az, vpc string) (string, int64) {
 	defer timed("resolve_lt")()
 	resp, err := h.EC2.DescribeLaunchTemplates(ctx, &ec2.DescribeLaunchTemplatesInput{
@@ -361,16 +333,10 @@ func (h *Handler) resolveLT(ctx context.Context, az, vpc string) (string, int64)
 	}
 
 	ltID := aws.ToString(resp.LaunchTemplates[0].LaunchTemplateId)
-
-	verResp, err := h.EC2.DescribeLaunchTemplateVersions(ctx, &ec2.DescribeLaunchTemplateVersionsInput{
-		LaunchTemplateId: aws.String(ltID),
-		Versions:         []string{"$Latest"},
-	})
-	if err != nil || len(verResp.LaunchTemplateVersions) == 0 {
-		return "", 0
+	version := aws.ToInt64(resp.LaunchTemplates[0].LatestVersionNumber)
+	if version == 0 {
+		version = aws.ToInt64(resp.LaunchTemplates[0].DefaultVersionNumber)
 	}
-
-	version := aws.ToInt64(verResp.LaunchTemplateVersions[0].VersionNumber)
 	return ltID, version
 }
 
@@ -383,15 +349,17 @@ func (h *Handler) createNAT(ctx context.Context, az, vpc string) string {
 		return ""
 	}
 
-	amiID := h.resolveAMI(ctx)
-
 	input := &ec2.RunInstancesInput{
 		LaunchTemplate: &ec2types.LaunchTemplateSpecification{
 			LaunchTemplateId: aws.String(ltID),
-			Version:          aws.String(fmt.Sprintf("%d", version)),
 		},
 		MinCount: aws.Int32(1),
 		MaxCount: aws.Int32(1),
+	}
+	if version > 0 {
+		input.LaunchTemplate.Version = aws.String(fmt.Sprintf("%d", version))
+	} else {
+		log.Printf("Launch template %s has no version metadata, using EC2 default version", ltID)
 	}
 
 	if h.ConfigVersion != "" {
@@ -401,10 +369,6 @@ func (h *Handler) createNAT(ctx context.Context, az, vpc string) string {
 				{Key: aws.String("ConfigVersion"), Value: aws.String(h.ConfigVersion)},
 			},
 		}}
-	}
-
-	if amiID != "" {
-		input.ImageId = aws.String(amiID)
 	}
 
 	resp, err := h.EC2.RunInstances(ctx, input)
@@ -485,8 +449,21 @@ func (h *Handler) cleanupAll(ctx context.Context) {
 // before termination completes, Terraform may try to delete still-attached ENIs.
 func (h *Handler) waitForTermination(ctx context.Context, instanceIDs []string) {
 	defer timed("wait_for_termination")()
-	for attempt := 0; attempt < 60; attempt++ {
-		time.Sleep(2 * time.Second)
+	const (
+		pollInterval   = 2 * time.Second
+		maxAttempts    = 90
+		deadlineBuffer = 5 * time.Second
+	)
+
+	deadline, hasDeadline := ctx.Deadline()
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		if hasDeadline && time.Until(deadline) <= deadlineBuffer {
+			log.Printf("Stopping termination wait with Lambda deadline %s away", time.Until(deadline).Round(time.Second))
+			return
+		}
+		if attempt > 0 {
+			time.Sleep(pollInterval)
+		}
 		resp, err := h.EC2.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
 			InstanceIds: instanceIDs,
 			Filters: []ec2types.Filter{
