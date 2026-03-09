@@ -1,0 +1,36 @@
+name: Semantic PR Title
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - edited
+      - synchronize
+      - reopened
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  semantic-pr-title:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate PR title format
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+
+          # Conventional Commits for squash-merge title safety.
+          pattern='^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([^)]+\))?(!)?: .+'
+          if [[ "$PR_TITLE" =~ $pattern ]]; then
+            echo "PR title is valid: $PR_TITLE"
+            exit 0
+          fi
+
+          echo "Invalid PR title: $PR_TITLE"
+          echo "Title must follow Conventional Commits, for example:"
+          echo "  fix: prevent stale pending NAT events from releasing EIP"
+          echo "  feat(lambda): support route-table blackhole cleanup"
+          exit 1
