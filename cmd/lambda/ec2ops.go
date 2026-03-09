@@ -335,7 +335,7 @@ func (h *Handler) resolveLT(ctx context.Context, az, vpc string) (string, int64)
 	ltID := aws.ToString(resp.LaunchTemplates[0].LaunchTemplateId)
 	version := aws.ToInt64(resp.LaunchTemplates[0].LatestVersionNumber)
 	if version == 0 {
-		return "", 0
+		version = aws.ToInt64(resp.LaunchTemplates[0].DefaultVersionNumber)
 	}
 	return ltID, version
 }
@@ -352,10 +352,14 @@ func (h *Handler) createNAT(ctx context.Context, az, vpc string) string {
 	input := &ec2.RunInstancesInput{
 		LaunchTemplate: &ec2types.LaunchTemplateSpecification{
 			LaunchTemplateId: aws.String(ltID),
-			Version:          aws.String(fmt.Sprintf("%d", version)),
 		},
 		MinCount: aws.Int32(1),
 		MaxCount: aws.Int32(1),
+	}
+	if version > 0 {
+		input.LaunchTemplate.Version = aws.String(fmt.Sprintf("%d", version))
+	} else {
+		log.Printf("Launch template %s has no version metadata, using EC2 default version", ltID)
 	}
 
 	if h.ConfigVersion != "" {

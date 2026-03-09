@@ -189,11 +189,18 @@ func TestNatZero(t *testing.T) {
 
 	// Shared across phases — set by Phase 1, used by Phase 2.
 	var activeWorkloadID string
+	runPhase := func(name string, fn func(t *testing.T)) bool {
+		if t.Run(name, fn) {
+			return true
+		}
+		t.Logf("Phase %s failed, aborting remaining phases so deferred cleanup can run", name)
+		return false
+	}
 
 	// ── Phase 1: NAT creation and connectivity ──────────────────────────
 	// Launch a workload and let EventBridge trigger the Lambda automatically.
 
-	t.Run("NATCreationAndConnectivity", func(t *testing.T) {
+	if !runPhase("NATCreationAndConnectivity", func(t *testing.T) {
 		wlStart := time.Now()
 		activeWorkloadID = launchWorkload(t, ec2Client, privateSubnet, amiID, runID, profileName, queueURL)
 		record("Launch workload instance", time.Since(wlStart))
@@ -241,13 +248,15 @@ func TestNatZero(t *testing.T) {
 		assert.Equal(t, natEIP, msg.EgressIP,
 			"workload egress IP should match NAT EIP")
 		t.Logf("Confirmed: workload egresses via NAT EIP %s", natEIP)
-	})
+	}) {
+		return
+	}
 
 	// ── Phase 2: NAT scale-down ─────────────────────────────────────────
 	// Terminate the workload and let EventBridge drive the full
 	// scale-down flow: stop NAT, then detach/release EIP.
 
-	t.Run("NATScaleDown", func(t *testing.T) {
+	if !runPhase("NATScaleDown", func(t *testing.T) {
 		require.NotEmpty(t, activeWorkloadID, "Phase 1 must set activeWorkloadID")
 
 		// Terminate the workload instance. EventBridge fires shutting-down
@@ -304,12 +313,14 @@ func TestNatZero(t *testing.T) {
 		})
 		record("Wait for EIP released", time.Since(eipStart))
 		t.Log("NAT stopped and EIP released")
-	})
+	}) {
+		return
+	}
 
 	// ── Phase 3: NAT restart from stopped state ─────────────────────────
 	// Launch a new workload and let EventBridge trigger the restart.
 
-	t.Run("NATRestart", func(t *testing.T) {
+	if !runPhase("NATRestart", func(t *testing.T) {
 		t.Log("Launching new workload to trigger NAT restart...")
 		wlStart := time.Now()
 		newWorkloadID := launchWorkload(t, ec2Client, privateSubnet, amiID, runID, profileName, queueURL)
@@ -347,11 +358,13 @@ func TestNatZero(t *testing.T) {
 		} else {
 			t.Logf("Workload egressed via NAT auto-assigned IP %s (EIP %s attached after; expected during restart)", msg.EgressIP, natEIP)
 		}
-	})
+	}) {
+		return
+	}
 
 	// ── Phase 4: NAT replacement on AMI update ─────────────────────────
 
-	t.Run("NATAMIUpgrade", func(t *testing.T) {
+	if !runPhase("NATAMIUpgrade", func(t *testing.T) {
 		if updatedNatAMI == "" {
 			t.Skip("NAT_ZERO_TEST_UPDATED_NAT_AMI_ID not set")
 		}
@@ -406,11 +419,13 @@ func TestNatZero(t *testing.T) {
 		msg := waitForEgress(t, sqsClient, queueURL, 4*time.Minute)
 		record("Wait for workload egress IP (AMI update)", time.Since(egressStart))
 		require.Equal(t, replacementEIP, msg.EgressIP, "workload egress IP should match replacement NAT EIP")
-	})
+	}) {
+		return
+	}
 
 	// ── Phase 5: Cleanup action ─────────────────────────────────────────
 
-	t.Run("CleanupAction", func(t *testing.T) {
+	runPhase("CleanupAction", func(t *testing.T) {
 		// Terminate all test workloads before cleanup to match production
 		// destroy ordering where Terraform deletes the EventBridge target
 		// (stopping new events) before invoking the cleanup Lambda.
