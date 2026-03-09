@@ -164,13 +164,14 @@ func (h *Handler) reconcile(ctx context.Context, az, vpc string, event Event, tr
 
 	// --- EIP convergence ---
 	natRunning := nat != nil && nat.StateName == "running"
+	natActive := nat != nil && natSupportsEgress(nat.StateName)
 	if natRunning && len(eips) == 0 {
 		log.Printf("NAT %s running with no EIP, allocating", nat.InstanceID)
 		h.allocateAndAttachEIP(ctx, nat, az)
 		return
 	}
-	if !natRunning && len(eips) > 0 {
-		log.Printf("NAT not running, releasing %d EIP(s) in %s", len(eips), az)
+	if !needNAT && !natActive && len(eips) > 0 {
+		log.Printf("No workloads and NAT inactive, releasing %d EIP(s) in %s", len(eips), az)
 		h.releaseEIPs(ctx, eips)
 		return
 	}
@@ -194,4 +195,8 @@ func natState(nat *Instance) string {
 		return "none"
 	}
 	return nat.StateName
+}
+
+func natSupportsEgress(state string) bool {
+	return state == "running" || state == "pending"
 }

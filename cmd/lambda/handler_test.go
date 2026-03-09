@@ -678,6 +678,47 @@ func TestReconcileNATEvent(t *testing.T) {
 		}
 	})
 
+	t.Run("late NAT pending event with workloads keeps existing EIP", func(t *testing.T) {
+		// Simulates out-of-order EventBridge delivery: NAT is already running
+		// with workloads and an attached EIP, but a stale "pending" event arrives.
+		// The reconciler must not release EIPs in this scale-up path.
+		mock := &mockEC2{}
+		workInst := makeTestInstance("i-work1", "running", testVPC, testAZ, workTags, nil)
+		eni := makeENI("eni-pub1", 0, "10.0.1.10", &ec2types.InstanceNetworkInterfaceAssociation{PublicIp: aws.String("1.2.3.4")})
+		natRunning := makeTestInstance("i-nat1", "running", testVPC, testAZ, natTags, []ec2types.InstanceNetworkInterface{eni})
+		mock.DescribeInstancesFn = func(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+			if len(params.InstanceIds) > 0 {
+				return describeResponse(natRunning), nil // resolveAZ on NAT
+			}
+			for _, f := range params.Filters {
+				if aws.ToString(f.Name) == "tag:nat-zero:managed" {
+					return describeResponse(natRunning), nil
+				}
+			}
+			return describeResponse(workInst), nil
+		}
+		mock.DescribeAddressesFn = func(ctx context.Context, params *ec2.DescribeAddressesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeAddressesOutput, error) {
+			return &ec2.DescribeAddressesOutput{
+				Addresses: []ec2types.Address{{
+					AllocationId:  aws.String("eipalloc-1"),
+					AssociationId: aws.String("eipassoc-1"),
+					PublicIp:      aws.String("1.2.3.4"),
+				}},
+			}, nil
+		}
+		h := newTestHandler(mock)
+		err := h.HandleRequest(context.Background(), Event{InstanceID: "i-nat1", State: "pending"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if mock.callCount("ReleaseAddress") != 0 {
+			t.Errorf("expected ReleaseAddress=0 for stale pending in scale-up, got %d", mock.callCount("ReleaseAddress"))
+		}
+		if mock.callCount("DisassociateAddress") != 0 {
+			t.Errorf("expected DisassociateAddress=0 for stale pending in scale-up, got %d", mock.callCount("DisassociateAddress"))
+		}
+	})
+
 	t.Run("NAT stopped event with stale stopping filter releases EIP", func(t *testing.T) {
 		// Simulates EC2 eventual consistency: EventBridge says "stopped" but
 		// filter-based DescribeInstances still returns "stopping". The reconciler
