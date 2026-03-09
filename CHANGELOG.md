@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/MachineDotDev/nat-zero/compare/v0.4.0...v0.4.1) (2026-03-09)
+
+
+### Documentation
+
+* clarify why nat-zero requires its own AMI ([#21](https://github.com/MachineDotDev/nat-zero/issues/21)) ([db4ee59](https://github.com/MachineDotDev/nat-zero/commit/db4ee597b181cb415a2b1408fd1dd5adbb6eaf08))
+
 ## [0.4.0](https://github.com/MachineDotDev/nat-zero/compare/v0.3.0...v0.4.0) (2026-03-09)
 
 
