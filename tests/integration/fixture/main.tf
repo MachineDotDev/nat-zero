@@ -102,7 +102,7 @@ module "nat_zero" {
   # - lambda_binary_path lets branch tests exercise unreleased Lambda code.
   # Normal module consumers should omit both and use the published defaults.
   ami_id             = var.nat_ami_id
-  lambda_binary_path = fileexists("${path.module}/../../.build/lambda.zip") ? abspath("${path.module}/../../.build/lambda.zip") : null
+  lambda_binary_path = fileexists("${path.module}/../../../.build/lambda.zip") ? abspath("${path.module}/../../../.build/lambda.zip") : null
 }
 
 output "vpc_id" {
