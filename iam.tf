@@ -48,6 +48,8 @@ resource "aws_iam_role_policy" "lambda_iam_policy" {
         Action = [
           "ec2:DescribeInstances",
           "ec2:DescribeLaunchTemplates",
+          # EC2 resolves launch template versions during RunInstances authorization.
+          "ec2:DescribeLaunchTemplateVersions",
           "ec2:DescribeAddresses",
         ]
         Resource = "*"
