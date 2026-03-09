@@ -153,6 +153,7 @@ Each NAT instance uses two ENIs to separate public and private traffic:
 - **Pre-created by Terraform**: ENIs persist across stop/start cycles, keeping route tables intact
 - **source_dest_check=false**: Required on both ENIs for NAT forwarding
 - **EIP lifecycle**: Allocated on NAT running, released on NAT stopped — no charge when idle
+- **AMI requirement**: nat-zero needs its own AMI because the ENIs are defined up front by the launch template and the EIP is attached later by the reconciler. `fck-nat` AMIs are intentionally unsupported here because their bootstrap discovers ENIs via IMDS/AWS calls, which does not match nat-zero's deterministic dual-ENI lifecycle.
 
 ## Config Versioning
 
