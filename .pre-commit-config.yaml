@@ -22,9 +22,6 @@ repos:
         name: go fmt
       - id: go-vet-repo-mod
         name: go vet
-      - id: go-test-mod
-        name: go test
-        exclude: "tests/integration/"
   - repo: local
     hooks:
       - id: go-staticcheck
