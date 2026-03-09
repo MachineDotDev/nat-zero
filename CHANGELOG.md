@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/MachineDotDev/nat-zero/compare/v0.3.0...v0.4.0) (2026-03-09)
+
+
+### Features
+
+* build and promote nat-zero AMIs ([5775967](https://github.com/MachineDotDev/nat-zero/commit/577596767f8eabc33fbb1cfa58d644e5ff704602))
+
 ## [0.3.0](https://github.com/MachineDotDev/nat-zero/compare/v0.2.1...v0.3.0) (2026-03-03)
 
 
