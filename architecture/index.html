@@ -1,0 +1,1208 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Scale-to-zero NAT instances for AWS">
+      
+      
+      
+      
+        <link rel="prev" href="..">
+      
+      
+        <link rel="next" href="../performance/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.4">
+    
+    
+      
+        <title>Architecture - nat-zero</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#architecture" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="nat-zero" class="md-header__button md-logo" aria-label="nat-zero" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            nat-zero
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Architecture
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+    
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/MachineDotDev/nat-zero" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="nat-zero" class="md-nav__button md-logo" aria-label="nat-zero" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    nat-zero
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/MachineDotDev/nat-zero" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Overview">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#pattern-origins" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pattern Origins
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reconciliation-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reconciliation Loop
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Reconciliation Loop">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#decision-matrix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision Matrix
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-single-writer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why Single Writer
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#event-agnosticism" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Event Agnosticism
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#event-flows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Event Flows
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Event Flows">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#scale-up" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scale-up
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scale-down" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scale-down
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#restart" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Restart
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#terraform-destroy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Terraform Destroy
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dual-eni-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dual ENI Architecture
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#config-versioning" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Config Versioning
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reliability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reliability
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Reliability">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#ec2-api-eventual-consistency" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EC2 API Eventual Consistency
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#eventbridge-propagation-delay" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EventBridge Propagation Delay
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#nat-stop-behavior" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        NAT Stop Behavior
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lambda-timeout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lambda Timeout
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Performance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Terraform Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Overview">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#pattern-origins" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pattern Origins
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reconciliation-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reconciliation Loop
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Reconciliation Loop">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#decision-matrix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision Matrix
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-single-writer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why Single Writer
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#event-agnosticism" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Event Agnosticism
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#event-flows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Event Flows
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Event Flows">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#scale-up" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scale-up
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scale-down" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scale-down
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#restart" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Restart
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#terraform-destroy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Terraform Destroy
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dual-eni-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dual ENI Architecture
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#config-versioning" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Config Versioning
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reliability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reliability
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Reliability">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#ec2-api-eventual-consistency" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EC2 API Eventual Consistency
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#eventbridge-propagation-delay" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EventBridge Propagation Delay
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#nat-stop-behavior" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        NAT Stop Behavior
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lambda-timeout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lambda Timeout
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="architecture">Architecture</h1>
+<h2 id="overview">Overview</h2>
+<p>nat-zero uses a <strong>reconciliation pattern</strong> to manage NAT instance lifecycles. A single Lambda function (concurrency=1) observes the current state of an AZ and takes one action to converge toward desired state, then returns. The next event picks up where this one left off.</p>
+<h3 id="pattern-origins">Pattern Origins</h3>
+<p>The reconciliation loop pattern has deep roots:</p>
+<ul>
+<li><strong>Control theory (1788+)</strong>: Feedback loops comparing actual state to desired state, taking corrective action</li>
+<li><strong>CFEngine (1993)</strong>: Mark Burgess introduced "convergence" to configuration management</li>
+<li><strong>Google Borg/Omega (2005+)</strong>: Internal cluster managers used reconciliation controllers</li>
+<li><strong>Kubernetes (2014+)</strong>: Popularized the pattern as "level-triggered" vs "edge-triggered" logic</li>
+</ul>
+<p>The key insight: <strong>state is more useful than events</strong>. Rather than tracking event sequences, we observe current state and compute the delta. This makes the system robust to missed events, crashes, and restarts.</p>
+<p>See: <a href="https://queue.acm.org/detail.cfm?id=2898444">Borg, Omega, and Kubernetes (ACM Queue)</a>, <a href="https://speakerdeck.com/thockin/edge-vs-level-triggered-logic">Tim Hockin - Edge vs Level Triggered Logic</a></p>
+<pre><code>  EventBridge (EC2 state changes)
+         │
+         ▼
+  ┌─────────────────────────┐
+  │  Lambda (concurrency=1) │
+  │                         │
+  │  1. Resolve AZ          │
+  │  2. Observe state       │
+  │  3. Take one action     │
+  │  4. Return              │
+  └─────────────────────────┘
+         │
+    ┌────┴────┐
+    ▼         ▼
+  EC2 API   EIP API
+  (NATs)    (allocate/release)
+</code></pre>
+<h2 id="reconciliation-loop">Reconciliation Loop</h2>
+<p>Every invocation runs the same loop regardless of which event triggered it:</p>
+<pre><code>reconcile(az):
+    workloads = pending/running non-NAT instances in AZ
+    nats      = non-terminated NAT instances in AZ
+    eips      = EIPs tagged for this AZ
+    needNAT   = len(workloads) &gt; 0
+
+    # One action per invocation, then return
+</code></pre>
+<h3 id="decision-matrix">Decision Matrix</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: center;">Workloads?</th>
+<th>NAT State</th>
+<th>EIP State</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: center;">Yes</td>
+<td>None / shutting-down</td>
+<td>—</td>
+<td><strong>Create</strong> NAT</td>
+</tr>
+<tr>
+<td style="text-align: center;">Yes</td>
+<td>Stopped</td>
+<td>—</td>
+<td><strong>Start</strong> NAT</td>
+</tr>
+<tr>
+<td style="text-align: center;">Yes</td>
+<td>Stopping</td>
+<td>—</td>
+<td>Wait (no-op)</td>
+</tr>
+<tr>
+<td style="text-align: center;">Yes</td>
+<td>Outdated config</td>
+<td>—</td>
+<td><strong>Terminate</strong> NAT (recreate on next event)</td>
+</tr>
+<tr>
+<td style="text-align: center;">Yes</td>
+<td>Running</td>
+<td>No EIP</td>
+<td><strong>Allocate + attach</strong> EIP</td>
+</tr>
+<tr>
+<td style="text-align: center;">Yes</td>
+<td>Running</td>
+<td>Has EIP</td>
+<td>Converged</td>
+</tr>
+<tr>
+<td style="text-align: center;">No</td>
+<td>Running / pending</td>
+<td>—</td>
+<td><strong>Stop</strong> NAT</td>
+</tr>
+<tr>
+<td style="text-align: center;">No</td>
+<td>Stopped</td>
+<td>Has EIP</td>
+<td><strong>Release</strong> EIP</td>
+</tr>
+<tr>
+<td style="text-align: center;">No</td>
+<td>Stopped</td>
+<td>No EIP</td>
+<td>Converged</td>
+</tr>
+<tr>
+<td style="text-align: center;">No</td>
+<td>Stopping</td>
+<td>—</td>
+<td>Wait (no-op)</td>
+</tr>
+<tr>
+<td style="text-align: center;">—</td>
+<td>Multiple NATs</td>
+<td>—</td>
+<td><strong>Terminate</strong> duplicates</td>
+</tr>
+<tr>
+<td style="text-align: center;">—</td>
+<td>—</td>
+<td>Multiple EIPs</td>
+<td><strong>Release</strong> extras</td>
+</tr>
+</tbody>
+</table>
+<h3 id="why-single-writer">Why Single Writer</h3>
+<p><code>reserved_concurrent_executions = 1</code> means only one Lambda runs at a time. Events that arrive during execution are queued and processed sequentially. This eliminates:</p>
+<ul>
+<li>Duplicate NAT creation</li>
+<li>Double EIP allocation</li>
+<li>Start/stop race conditions</li>
+<li>Need for distributed locking</li>
+</ul>
+<h3 id="event-agnosticism">Event Agnosticism</h3>
+<p>The reconciler does not care what type of instance triggered the event. It observes all workloads and NATs in the AZ, computes desired state, and acts. The event is just a signal that "something changed."</p>
+<ul>
+<li>Workload <code>pending</code> → reconcile → creates NAT if needed</li>
+<li>NAT <code>running</code> → reconcile → attaches EIP if needed</li>
+<li>Workload <code>terminated</code> → reconcile → stops NAT if no workloads</li>
+<li>NAT <code>stopped</code> → reconcile → releases EIP if present</li>
+<li>Instance gone from API → sweep all configured AZs</li>
+</ul>
+<h2 id="event-flows">Event Flows</h2>
+<h3 id="scale-up">Scale-up</h3>
+<pre><code>Workload launches (pending)
+  → reconcile: workloads=1, NAT=nil       → createNAT
+
+NAT reaches running
+  → reconcile: workloads=1, NAT=running, EIP=0  → allocateAndAttachEIP
+
+Next event
+  → reconcile: workloads=1, NAT=running, EIP=1  → converged ✓
+</code></pre>
+<h3 id="scale-down">Scale-down</h3>
+<pre><code>Last workload terminates
+  → reconcile: workloads=0, NAT=running    → stopNAT
+
+NAT reaches stopped
+  → reconcile: workloads=0, NAT=stopped, EIP=1  → releaseEIP
+
+Next event
+  → reconcile: workloads=0, NAT=stopped, EIP=0  → converged ✓
+</code></pre>
+<h3 id="restart">Restart</h3>
+<pre><code>New workload launches, NAT is stopped
+  → reconcile: workloads=1, NAT=stopped    → startNAT
+
+NAT reaches running
+  → reconcile: workloads=1, NAT=running, EIP=0  → allocateAndAttachEIP
+  → converged ✓
+</code></pre>
+<h3 id="terraform-destroy">Terraform Destroy</h3>
+<pre><code>Terraform invokes Lambda with {action: &quot;cleanup&quot;}
+  → terminate all NAT instances
+  → wait for full termination (ENI detachment)
+  → release all EIPs
+  → return (Terraform proceeds to delete ENIs/SGs)
+</code></pre>
+<h2 id="dual-eni-architecture">Dual ENI Architecture</h2>
+<p>Each NAT instance uses two ENIs to separate public and private traffic:</p>
+<pre><code>  Private Subnet          NAT Instance              Public Subnet
+  ┌──────────────┐   ┌──────────────────┐   ┌──────────────────┐
+  │ Route Table   │   │                  │   │                  │
+  │ 0.0.0.0/0 ───┼──→│ Private ENI      │   │ Public ENI       │
+  │              │   │ (ens6)           │   │ (ens5) + EIP     │──→ IGW
+  │              │   │     ↓ iptables ──┼──→│                  │
+  │              │   │   MASQUERADE     │   │ src_dst_check=off│
+  └──────────────┘   └──────────────────┘   └──────────────────┘
+</code></pre>
+<ul>
+<li><strong>Pre-created by Terraform</strong>: ENIs persist across stop/start cycles, keeping route tables intact</li>
+<li><strong>source_dest_check=false</strong>: Required on both ENIs for NAT forwarding</li>
+<li><strong>EIP lifecycle</strong>: Allocated on NAT running, released on NAT stopped — no charge when idle</li>
+<li><strong>AMI requirement</strong>: nat-zero needs its own AMI because the ENIs are defined up front by the launch template and the EIP is attached later by the reconciler. <code>fck-nat</code> AMIs are intentionally unsupported here because their bootstrap discovers ENIs via IMDS/AWS calls, which does not match nat-zero's deterministic dual-ENI lifecycle.</li>
+</ul>
+<h2 id="config-versioning">Config Versioning</h2>
+<p>The Lambda tags each NAT instance with a <code>ConfigVersion</code> hash derived from AMI, instance type, market type, volume size, and encryption setting.</p>
+<p>When the reconciler detects an outdated NAT, replacement takes two events (following the "one action per invocation" pattern):</p>
+<ol>
+<li><strong>Event 1</strong>: Outdated config detected → terminate NAT → return</li>
+<li><strong>Event 2</strong>: NAT is now <code>shutting-down</code>/<code>terminated</code> → create new NAT with current config</li>
+</ol>
+<p>This avoids racing with ENI detachment and keeps error handling simple.</p>
+<h2 id="reliability">Reliability</h2>
+<h3 id="ec2-api-eventual-consistency">EC2 API Eventual Consistency</h3>
+<p>The EC2 API is eventually consistent. When EventBridge fires a state change event (e.g., <code>running</code>), the EC2 DescribeInstances API may still return the previous state (e.g., <code>pending</code>) for several seconds.</p>
+<p>nat-zero handles this by <strong>trusting the event state</strong> for the trigger instance:</p>
+<pre><code class="language-go">// Trust event state over EC2 API (eventual consistency)
+if triggerInst != nil {
+    triggerInst.StateName = event.State
+}
+</code></pre>
+<p>This also applies to NAT instances that may not appear in filter-based queries immediately after creation (tag propagation delay). The reconciler adds the trigger instance to the NAT list if it's missing.</p>
+<p>For destructive EIP release, nat-zero uses an additional safety guard:</p>
+<ul>
+<li>EIPs are released only in the scale-down path (<code>workloads=0</code>)</li>
+<li>NAT <code>pending</code> is treated as active egress state (same as <code>running</code>) and never triggers EIP release</li>
+</ul>
+<h3 id="eventbridge-propagation-delay">EventBridge Propagation Delay</h3>
+<p>After Terraform creates the EventBridge rule and target, there's a propagation delay before events are reliably delivered. Events fired during this window may be silently dropped.</p>
+<p>nat-zero includes a 60-second <code>time_sleep</code> resource after target creation to mitigate this. Workloads launched immediately after <code>terraform apply</code> may still miss their initial events, but subsequent events will trigger reconciliation.</p>
+<h3 id="nat-stop-behavior">NAT Stop Behavior</h3>
+<p>NAT instances are stopped with <code>Force=true</code> because they're stateless packet forwarders. There's no graceful shutdown needed — the routing table instantly fails over when the ENI becomes unreachable, and workloads retry their connections.</p>
+<h3 id="lambda-timeout">Lambda Timeout</h3>
+<p>The Lambda has a 90-second timeout. Typical invocations complete in 400-600ms. The extended timeout accommodates:
+- Cleanup operations during <code>terraform destroy</code> (terminate NATs, wait for ENI detachment, release EIPs)
+- Slow EC2 API responses under load</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": [], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

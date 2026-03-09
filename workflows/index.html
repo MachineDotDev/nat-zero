@@ -1,0 +1,957 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Scale-to-zero NAT instances for AWS">
+      
+      
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.4">
+    
+    
+      
+        <title>CI/CD Workflows - nat-zero</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#cicd-workflows" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="nat-zero" class="md-header__button md-logo" aria-label="nat-zero" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            nat-zero
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              CI/CD Workflows
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+    
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/MachineDotDev/nat-zero" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="nat-zero" class="md-nav__button md-logo" aria-label="nat-zero" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    nat-zero
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/MachineDotDev/nat-zero" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Performance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Terraform Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#workflows-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workflows Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pre-commit-precommityml" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pre-commit (precommit.yml)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#go-tests-go-testsyml" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Go Tests (go-tests.yml)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#manual-pr-checks-manual-pr-checksyml" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Manual PR Checks (manual-pr-checks.yml)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#integration-tests-integration-testsyml" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Integration Tests (integration-tests.yml)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Integration Tests (integration-tests.yml)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Steps
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#nat-images-nat-imagesyml" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        NAT Images (nat-images.yml)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#docs-docsyml" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Docs (docs.yml)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#release-please-release-pleaseyml" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Release Please (release-please.yml)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Release Please (release-please.yml)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#job-1-release-please" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Job 1: release-please
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Job 1: release-please">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-release-please-works-step-by-step" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How release-please works step by step
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#job-2-build-lambda" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Job 2: build-lambda
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changelog-sections" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changelog sections
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#repo-rulesets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Repo Rulesets
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Repo Rulesets">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#main-branch-ruleset" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        main branch ruleset
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tags-ruleset" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tags ruleset
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pr-lifecycle-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PR Lifecycle Summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lambda-code-paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lambda Code Paths
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="cicd-workflows">CI/CD Workflows</h1>
+<p>Internal reference for GitHub Actions workflows, repo rulesets, and the release process. This file is not published to the docs site.</p>
+<h2 id="workflows-overview">Workflows Overview</h2>
+<table>
+<thead>
+<tr>
+<th>Workflow</th>
+<th>File</th>
+<th>Triggers</th>
+<th>Required Check</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Manual PR Checks</td>
+<td><code>manual-pr-checks.yml</code></td>
+<td>PR labeled <code>integration-test</code> or <code>nat-images</code></td>
+<td>No (router workflow)</td>
+</tr>
+<tr>
+<td>Pre-commit</td>
+<td><code>precommit.yml</code></td>
+<td>All PRs</td>
+<td><code>precommit</code></td>
+</tr>
+<tr>
+<td>Go Tests</td>
+<td><code>go-tests.yml</code></td>
+<td>PRs touching <code>cmd/lambda/**</code>; push to <code>main</code></td>
+<td><code>go-test</code></td>
+</tr>
+<tr>
+<td>Integration Tests</td>
+<td><code>integration-tests.yml</code></td>
+<td>Manual dispatch; reusable workflow</td>
+<td><code>integration-test</code></td>
+</tr>
+<tr>
+<td>NAT Images</td>
+<td><code>nat-images.yml</code></td>
+<td>Manual dispatch; reusable workflow</td>
+<td>No (promotion workflow)</td>
+</tr>
+<tr>
+<td>Docs</td>
+<td><code>docs.yml</code></td>
+<td>Push to <code>main</code> (filtered paths)</td>
+<td>No (post-merge deploy)</td>
+</tr>
+<tr>
+<td>Release</td>
+<td><code>release-please.yml</code></td>
+<td>Push to <code>main</code>; manual dispatch</td>
+<td>No (post-merge)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="pre-commit-precommityml">Pre-commit (<code>precommit.yml</code>)</h2>
+<p>Runs the repo's <code>.pre-commit-config.yaml</code> hooks: terraform fmt/validate, tflint, terraform-docs, Go staticcheck, actionlint, shellcheck, and Packer fmt/validate.</p>
+<ul>
+<li><strong>PR trigger</strong>: All pull requests, all paths (no path filter).</li>
+<li><strong>Job name</strong>: <code>precommit</code> (required status check for merge).</li>
+</ul>
+<h2 id="go-tests-go-testsyml">Go Tests (<code>go-tests.yml</code>)</h2>
+<p>Runs <code>go test -v -race ./...</code> in <code>cmd/lambda/</code> (Lambda unit tests).</p>
+<ul>
+<li><strong>PR trigger</strong>: Only when <code>cmd/lambda/**</code> changes.</li>
+<li><strong>Push trigger</strong>: Only on <code>main</code>, same path filter.</li>
+<li><strong>Job name</strong>: <code>go-test</code> (required status check for merge).</li>
+<li><strong>Note</strong>: Path-filtered. If a PR doesn't touch Go code, this check won't run and won't block merge (see ruleset notes below).</li>
+</ul>
+<h2 id="manual-pr-checks-manual-pr-checksyml">Manual PR Checks (<code>manual-pr-checks.yml</code>)</h2>
+<p>Single entry point for expensive, manually requested PR checks.</p>
+<ul>
+<li><strong>PR trigger</strong>: <code>labeled</code> type only.</li>
+<li><strong>Labels</strong>:</li>
+<li><code>integration-test</code> -&gt; calls the reusable integration workflow</li>
+<li><code>nat-images</code> -&gt; calls the reusable NAT image workflow</li>
+<li><strong>Why this exists</strong>: GitHub cannot filter <code>pull_request:labeled</code> by label name up front. A single router workflow keeps that complexity in one place and prevents both heavyweight workflows from waking up on every label event.</li>
+<li><strong>How it appears on the PR</strong>: the called reusable jobs show up as normal PR checks under the router workflow run.</li>
+<li><strong>One-shot labels</strong>: the router removes the trigger label after the run is queued, so adding the same label later will trigger a fresh run again.</li>
+</ul>
+<h2 id="integration-tests-integration-testsyml">Integration Tests (<code>integration-tests.yml</code>)</h2>
+<p>Full end-to-end test: deploys real AWS infrastructure via Terratest, exercises the Lambda lifecycle (create NAT, scale-down, restart, cleanup), then destroys everything.</p>
+<ul>
+<li><strong>Manual trigger</strong>: <code>workflow_dispatch</code>.</li>
+<li><strong>Reusable trigger</strong>: <code>workflow_call</code>.</li>
+<li><strong>Concurrency</strong>: Group <code>nat-zero-integration</code>, <code>cancel-in-progress: false</code>. Only one integration test runs at a time; new ones queue.</li>
+<li><strong>Environment</strong>: <code>integration</code> (holds the <code>INTEGRATION_ROLE_ARN</code> secret for OIDC).</li>
+<li><strong>Timeout</strong>: 15 minutes.</li>
+<li><strong>Job name</strong>: <code>integration-test</code> (required status check for merge).</li>
+<li><strong>Optional inputs</strong>:</li>
+<li><code>nat_ami_id</code> to force the integration fixture onto a specific NAT AMI. If omitted, the workflow uses the shared private test AMI from the GitHub Actions variable <code>NAT_ZERO_TEST_AMI_ID</code>.</li>
+<li><code>updated_nat_ami_id</code> to exercise the AMI replacement path after a second <code>terraform apply</code>.</li>
+</ul>
+<p>These inputs are test-only fixture controls. Normal module consumers should omit them and use the published nat-zero AMI defaults.</p>
+<h3 id="steps">Steps</h3>
+<ol>
+<li>Checkout, setup Go, setup Terraform (wrapper disabled).</li>
+<li>Assume AWS role via OIDC (<code>aws-actions/configure-aws-credentials</code>).</li>
+<li>Build the Lambda binary from source (<code>cmd/lambda/</code> -&gt; <code>.build/lambda.zip</code>).</li>
+<li>Run <code>go test -v -timeout 10m -count=1</code> in <code>tests/integration/</code>.</li>
+</ol>
+<h2 id="nat-images-nat-imagesyml">NAT Images (<code>nat-images.yml</code>)</h2>
+<p>Manual promotion workflow for the default public nat-zero AMI.</p>
+<ol>
+<li>Build the AMI with Packer in the chosen source region.</li>
+<li>Let Packer privately copy it to the regions listed in <code>ami/nat-zero-private-all-regions.pkrvars.hcl</code>.</li>
+<li>Run one us-east-1 integration gate on a single stack:</li>
+<li>deploy from the shared private test NAT AMI in <code>NAT_ZERO_TEST_AMI_ID</code></li>
+<li>exercise the normal NAT lifecycle</li>
+<li>reapply the module with the new AMI</li>
+<li>verify the old NAT is replaced and the new NAT works</li>
+<li>After the integration gates pass, run a small publish script that opens launch permissions for the copied AMIs.</li>
+<li>Open a PR that updates the Terraform defaults (<code>ami_owner_account</code>, <code>ami_name_pattern</code>) so merge + release-please can publish the new module version.</li>
+</ol>
+<p>For pre-merge validation on a branch, add the <code>nat-images</code> label to the PR. The router workflow calls <code>nat-images.yml</code> as a reusable workflow, which uses the GitHub Actions variable <code>NAT_ZERO_AMI_BUILD_SUBNET_ID</code>, runs the build and integration gates on the PR branch, and intentionally skips the public-sharing and promotion-PR jobs.</p>
+<h2 id="docs-docsyml">Docs (<code>docs.yml</code>)</h2>
+<p>Deploys MkDocs Material to GitHub Pages.</p>
+<ul>
+<li><strong>Trigger</strong>: Push to <code>main</code> only, when <code>docs/**</code>, <code>mkdocs.yml</code>, <code>README.md</code>, or <code>*.tf</code> change.</li>
+<li><strong>Not a merge gate</strong> -- only runs post-merge.</li>
+<li>Runs <code>mkdocs gh-deploy --force</code>.</li>
+</ul>
+<h2 id="release-please-release-pleaseyml">Release Please (<code>release-please.yml</code>)</h2>
+<p>Two-job workflow that automates versioning, changelogs, and Lambda binary distribution.</p>
+<h3 id="job-1-release-please">Job 1: <code>release-please</code></h3>
+<p>Runs <code>googleapis/release-please-action@v4</code> with:</p>
+<ul>
+<li><strong>Config</strong>: <code>release-please-config.json</code> -- <code>terraform-module</code> release type at repo root.</li>
+<li><strong>Manifest</strong>: <code>.release-please-manifest.json</code> -- tracks current version (starts at <code>0.0.0</code>).</li>
+</ul>
+<h4 id="how-release-please-works-step-by-step">How release-please works step by step</h4>
+<ol>
+<li>Every push to <code>main</code> triggers this job.</li>
+<li>Release-please scans commits since the last release for Conventional Commits (<code>feat:</code>, <code>fix:</code>, etc.).</li>
+<li>If releasable commits exist (<code>feat</code> or <code>fix</code>), it <strong>creates or updates a release PR</strong> (e.g., <code>chore(main): release 0.1.0</code>) containing:</li>
+<li>Updated <code>CHANGELOG.md</code> with grouped entries per the configured sections (Features, Bug Fixes, Performance, Documentation, Miscellaneous).</li>
+<li>Version bump in <code>.release-please-manifest.json</code>.</li>
+<li>For <code>terraform-module</code> type: version strings in Terraform files if present.</li>
+<li>The release PR sits open until merged.</li>
+<li>When the release PR is merged, release-please runs again on that push. It detects its own merged PR and:</li>
+<li>Creates a <strong>GitHub Release</strong> with a version tag (e.g., <code>v0.1.0</code>).</li>
+<li>Sets output <code>release_created=true</code> and <code>tag_name=v0.1.0</code>.</li>
+</ol>
+<h3 id="job-2-build-lambda">Job 2: <code>build-lambda</code></h3>
+<p>Only runs when <code>release_created == 'true'</code> (i.e., the push that merges a release PR).</p>
+<ol>
+<li>Cross-compiles the Go Lambda for <code>linux/arm64</code>.</li>
+<li>Creates a deterministic <code>lambda.zip</code>.</li>
+<li>Writes <code>lambda.zip.base64sha256</code>, containing the base64-encoded SHA256 for the zip.</li>
+<li><strong>Uploads the zip and checksum to the versioned release</strong> (e.g., <code>v0.1.0</code>).</li>
+</ol>
+<p>That is the full release artifact flow. There is no second workflow that edits the release PR, and there is no rolling "latest" Lambda artifact to keep in sync.</p>
+<h3 id="changelog-sections">Changelog sections</h3>
+<table>
+<thead>
+<tr>
+<th>Commit prefix</th>
+<th>Changelog section</th>
+<th>Triggers release?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>feat:</code></td>
+<td>Features</td>
+<td>Yes (minor bump)</td>
+</tr>
+<tr>
+<td><code>fix:</code></td>
+<td>Bug Fixes</td>
+<td>Yes (patch bump)</td>
+</tr>
+<tr>
+<td><code>perf:</code></td>
+<td>Performance</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>docs:</code></td>
+<td>Documentation</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>chore:</code></td>
+<td>Miscellaneous</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>feat!:</code> / <code>BREAKING CHANGE:</code></td>
+<td>Features</td>
+<td>Yes (major bump)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="repo-rulesets">Repo Rulesets</h2>
+<h3 id="main-branch-ruleset"><code>main</code> branch ruleset</h3>
+<ul>
+<li><strong>PRs required</strong> with:</li>
+<li>0 required approvals</li>
+<li>Stale reviews dismissed on push</li>
+<li>All review threads must be resolved</li>
+<li><strong>Required status checks</strong>: <code>precommit</code>, <code>go-test</code></li>
+<li>strict mode enabled, so required checks must be up to date with <code>main</code></li>
+<li><strong>Linear history required</strong></li>
+<li><strong>No force push</strong></li>
+<li><strong>No branch deletion</strong></li>
+<li><strong>Bypass</strong>: Admin role can bypass because <code>enforce_admins</code> is disabled.</li>
+</ul>
+<h3 id="tags-ruleset"><code>tags</code> ruleset</h3>
+<ul>
+<li>Protects <code>refs/tags/v*</code> -- no deletion or update of version tags.</li>
+<li>Ensures release-please's tags are immutable.</li>
+<li>Same admin bypass.</li>
+</ul>
+<h2 id="pr-lifecycle-summary">PR Lifecycle Summary</h2>
+<pre><code>Open PR
+  -&gt; precommit runs (always)
+  -&gt; go-test runs (if cmd/lambda/** changed)
+  -&gt; Add &quot;integration-test&quot; label -&gt; router calls integration tests
+  -&gt; Add &quot;nat-images&quot; label -&gt; router calls the NAT image build/integration gate
+  -&gt; threads resolved
+  -&gt; Squash merge to main
+
+Post-merge to main:
+  -&gt; release-please creates/updates a release PR (if feat/fix commits exist)
+  -&gt; docs deploy (if docs changed)
+
+Merge release PR:
+  -&gt; release-please creates GitHub Release + tag
+  -&gt; build-lambda uploads lambda.zip + lambda.zip.base64sha256 to that versioned release
+</code></pre>
+<h2 id="lambda-code-paths">Lambda Code Paths</h2>
+<p>The module intentionally supports exactly three ways to supply Lambda code:</p>
+<ol>
+<li>Default release artifact</li>
+<li>Best for normal users</li>
+<li>Terraform downloads the versioned <code>lambda.zip</code> and reads the matching <code>lambda.zip.base64sha256</code></li>
+<li>The checksum file lets Terraform know <code>source_code_hash</code> during <code>plan</code>, before the zip is downloaded during <code>apply</code></li>
+<li>A changed published checksum shows up as a Lambda code change in <code>terraform plan</code></li>
+<li>Pre-built local zip via <code>lambda_binary_path</code></li>
+<li>Best for CI, branch testing, or custom unreleased binaries</li>
+<li>Terraform hashes the local file during plan</li>
+<li>Apply-time build via <code>build_lambda_locally = true</code></li>
+<li>Best for local development only</li>
+<li>Requires Go and <code>zip</code></li>
+<li>May require a second apply after Lambda code changes</li>
+</ol>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": [], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
