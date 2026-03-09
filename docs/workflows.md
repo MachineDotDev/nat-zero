@@ -40,6 +40,7 @@ Single entry point for expensive, manually requested PR checks.
   - `nat-images` -> calls the reusable NAT image workflow
 - **Why this exists**: GitHub cannot filter `pull_request:labeled` by label name up front. A single router workflow keeps that complexity in one place and prevents both heavyweight workflows from waking up on every label event.
 - **How it appears on the PR**: the called reusable jobs show up as normal PR checks under the router workflow run.
+- **One-shot labels**: the router removes the trigger label after the run is queued, so adding the same label later will trigger a fresh run again.
 
 ## Integration Tests (`integration-tests.yml`)
 

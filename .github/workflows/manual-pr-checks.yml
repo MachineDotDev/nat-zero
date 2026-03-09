@@ -7,18 +7,30 @@ on:
 permissions:
   contents: read
   id-token: write
+  pull-requests: write
 
 jobs:
   integration:
     if: ${{ github.event.label.name == 'integration-test' }}
     uses: ./.github/workflows/integration-tests.yml
     secrets: inherit
-    with:
-      checkout_ref: ${{ github.event.pull_request.head.ref }}
 
   nat-images:
     if: ${{ github.event.label.name == 'nat-images' }}
     uses: ./.github/workflows/nat-images.yml
     secrets: inherit
-    with:
-      checkout_ref: ${{ github.event.pull_request.head.ref }}
+
+  clear-trigger-label:
+    if: >-
+      always() &&
+      (github.event.label.name == 'integration-test' || github.event.label.name == 'nat-images')
+    needs:
+      - integration
+      - nat-images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove trigger label
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LABEL_NAME: ${{ github.event.label.name }}
+        run: gh pr edit "${{ github.event.pull_request.number }}" --remove-label "$LABEL_NAME"

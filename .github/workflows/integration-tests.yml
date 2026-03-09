@@ -11,19 +11,12 @@ on:
         description: Optional replacement NAT AMI ID to exercise the AMI upgrade path
         required: false
         type: string
-      checkout_ref:
-        description: Optional git ref to checkout before running the test
-        required: false
-        type: string
   workflow_call:
     inputs:
       nat_ami_id:
         required: false
         type: string
       updated_nat_ami_id:
-        required: false
-        type: string
-      checkout_ref:
         required: false
         type: string
 
@@ -45,8 +38,6 @@ jobs:
     environment: integration
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          ref: ${{ inputs.checkout_ref || github.ref_name }}
 
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:

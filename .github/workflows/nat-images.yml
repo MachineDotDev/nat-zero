@@ -17,10 +17,6 @@ on:
         required: false
         default: true
         type: boolean
-      checkout_ref:
-        description: Optional git ref to checkout before running the workflow
-        required: false
-        type: string
   workflow_call:
     inputs:
       build_subnet_id:
@@ -33,9 +29,6 @@ on:
         required: false
         default: true
         type: boolean
-      checkout_ref:
-        required: false
-        type: string
 
 concurrency:
   group: nat-zero-ami
@@ -58,7 +51,6 @@ jobs:
       source_region: ${{ steps.resolve.outputs.source_region }}
       run_integration_gate: ${{ steps.resolve.outputs.run_integration_gate }}
       should_publish: ${{ steps.resolve.outputs.should_publish }}
-      checkout_ref: ${{ steps.resolve.outputs.checkout_ref }}
     steps:
       - name: Resolve workflow inputs
         id: resolve
@@ -67,9 +59,7 @@ jobs:
           INPUT_BUILD_SUBNET_ID: ${{ inputs.build_subnet_id }}
           INPUT_SOURCE_REGION: ${{ inputs.source_region }}
           INPUT_RUN_INTEGRATION_GATE: ${{ inputs.run_integration_gate }}
-          INPUT_CHECKOUT_REF: ${{ inputs.checkout_ref }}
           DEFAULT_BUILD_SUBNET_ID: ${{ vars.NAT_ZERO_AMI_BUILD_SUBNET_ID }}
-          GITHUB_REF_NAME: ${{ github.ref_name }}
         run: |
           should_publish=true
 
@@ -80,7 +70,6 @@ jobs:
           build_subnet_id="${INPUT_BUILD_SUBNET_ID:-$DEFAULT_BUILD_SUBNET_ID}"
           source_region="${INPUT_SOURCE_REGION:-us-east-1}"
           run_integration_gate="${INPUT_RUN_INTEGRATION_GATE:-true}"
-          checkout_ref="${INPUT_CHECKOUT_REF:-$GITHUB_REF_NAME}"
 
           if [ -z "$build_subnet_id" ]; then
             echo "build_subnet_id input is required unless vars.NAT_ZERO_AMI_BUILD_SUBNET_ID is set" >&2
@@ -92,7 +81,6 @@ jobs:
             echo "source_region=$source_region"
             echo "run_integration_gate=$run_integration_gate"
             echo "should_publish=$should_publish"
-            echo "checkout_ref=$checkout_ref"
           } >> "$GITHUB_OUTPUT"
 
   build-and-copy:
@@ -198,7 +186,6 @@ jobs:
     uses: ./.github/workflows/integration-tests.yml
     secrets: inherit
     with:
-      checkout_ref: ${{ needs.resolve-inputs.outputs.checkout_ref }}
       nat_ami_id: ${{ vars.NAT_ZERO_TEST_AMI_ID }}
       updated_nat_ami_id: ${{ needs.build-and-copy.outputs.test_ami_id }}
 
@@ -251,8 +238,6 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          ref: ${{ needs.resolve-inputs.outputs.checkout_ref }}
 
       - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
         with:
