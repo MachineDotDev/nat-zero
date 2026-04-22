@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.2](https://github.com/MachineDotDev/nat-zero/compare/v0.4.1...v0.4.2) (2026-04-22)
+
+
+### Documentation
+
+* document bot-authored PR gates and semantic-pr-title trigger ([#37](https://github.com/MachineDotDev/nat-zero/issues/37)) ([a6a5997](https://github.com/MachineDotDev/nat-zero/commit/a6a59974409b34b4e2cd23da8b9cf708b8c12855))
+* document CI/CD architecture with workflow diagrams ([#32](https://github.com/MachineDotDev/nat-zero/issues/32)) ([ef8a81f](https://github.com/MachineDotDev/nat-zero/commit/ef8a81fec8dcec880be4161426fb8948dd15cbc0))
+
 ## [0.4.1](https://github.com/MachineDotDev/nat-zero/compare/v0.4.0...v0.4.1) (2026-03-09)
 
 
