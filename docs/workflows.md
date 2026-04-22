@@ -29,7 +29,7 @@ graph TB
 | Workflow | File | Triggers | Required check? |
 |----------|------|----------|-----------------|
 | Pre-commit | `precommit.yml` | All PRs | Yes (`precommit`) |
-| Go Tests | `go-tests.yml` | PRs touching `cmd/lambda/**`, `tests/integration/**`, or this workflow file | Yes (`go-test`) |
+| Go Tests | `go-tests.yml` | Every PR + push to `main` (gating job skips `go-test`/`go-dep-check` when no Go-relevant paths changed) | Yes (`go-test`) |
 | Semantic PR Title | `semantic-pr-title.yml` | All PRs (`pull_request_target`) | Yes (`semantic-pr-title`) |
 | Manual PR Checks | `manual-pr-checks.yml` | PR labeled `integration-test` or `nat-images` | No (router) |
 | Integration Tests | `integration-tests.yml` | Manual dispatch; reusable workflow | No (called via router) |
@@ -226,9 +226,10 @@ flowchart TD
     T -->|yes| SPT_OK[semantic-pr-title passes]
     T -->|no| SPT_FAIL[semantic-pr-title fails<br/>merge blocked]
 
-    PR --> PATH{Changed paths?}
-    PATH -->|cmd/lambda/** or<br/>tests/integration/**| GOT[go-tests runs]
-    PATH -->|other| GOT_SKIP[go-tests skipped entirely]
+    PR --> CHG[changes job runs<br/>every PR]
+    CHG --> PATH{Go-relevant paths<br/>changed?}
+    PATH -->|yes| GOT[go-test + go-dep-check run]
+    PATH -->|no| GOT_SKIP[go-test + go-dep-check skipped<br/>required check still satisfied]
     GOT --> GOT_RESULT{pass?}
     GOT_RESULT -->|yes| GOT_OK[go-test passes]
     GOT_RESULT -->|no| GOT_FAIL[go-test fails<br/>merge blocked]
@@ -266,15 +267,17 @@ Runs the repo's `.pre-commit-config.yaml` hooks: `terraform fmt` / `validate`, `
 
 ### Go Tests (`go-tests.yml`)
 
-Two jobs:
+Three jobs with explicit gating:
 
-1. `go-test`: `go test -v -race ./...` in `cmd/lambda/` (Lambda unit tests).
-2. `go-dep-check`: `go build ./...` and `go vet ./...` in `tests/integration/` (dependency health for the test module — catches breakage from Dependabot bumps).
+1. `changes`: runs on every PR and every push to `main`. Uses `git diff` against the PR base to detect whether any of `cmd/lambda/**`, `tests/integration/**`, or `.github/workflows/go-tests.yml` changed. Exports `outputs.go` as `true` or `false`. On `push: main` it always exports `true`.
+2. `go-test`: gated on `needs.changes.outputs.go == 'true'`. Runs `go test -v -race ./...` in `cmd/lambda/` (Lambda unit tests).
+3. `go-dep-check`: gated on the same condition. Runs `go build ./...` and `go vet ./...` in `tests/integration/` (dependency health for the test module — catches breakage from Dependabot bumps).
 
-- **PR trigger**: changes to `cmd/lambda/**`, `tests/integration/**`, or `.github/workflows/go-tests.yml`.
-- **Push trigger**: `main`, same path filter.
+- **PR trigger**: every PR (no path filter).
+- **Push trigger**: every push to `main`.
 - **Required check name**: `go-test`.
-- **Note**: path-filtered. If a PR doesn't touch those paths, the workflow doesn't run and the `go-test` check doesn't appear on the PR — the required-checks rule allows this because the check only blocks when present.
+- **Why this design**: required status checks deadlock if a path-filtered workflow doesn't run. The previous design (path-filtered at the trigger level) left docs-only / Terraform-only / CI-only PRs with a missing `go-test` check that could only merge via admin bypass. The gating job solves this while keeping the real test work behind a path check.
+- **Reading the rollup**: on a Go-touching PR, `changes`, `go-test`, and `go-dep-check` all run and report success. On a non-Go PR, `changes` reports success and both `go-test` and `go-dep-check` show as skipped. GitHub's ruleset evaluation treats skipped required jobs as satisfied, so the required `go-test` check passes in both cases.
 
 ### Semantic PR Title (`semantic-pr-title.yml`)
 
@@ -546,7 +549,7 @@ stateDiagram-v2
 ```text
 Open PR
   -> precommit runs (always)
-  -> go-test runs (if cmd/lambda/** or tests/integration/** changed)
+  -> changes gating job runs (always); go-test + go-dep-check run only when Go paths changed, skipped otherwise
   -> semantic-pr-title runs (always)
   -> Add "integration-test" label -> router calls integration tests
   -> Add "nat-images" label -> router calls the NAT image build / integration gate
