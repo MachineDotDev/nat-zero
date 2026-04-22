@@ -1,23 +1,50 @@
 name: Go Tests
 
 on:
-  pull_request:
-    paths:
-      - "cmd/lambda/**"
-      - "tests/integration/**"
-      - ".github/workflows/go-tests.yml"
+  pull_request: {}
   push:
     branches: [main]
-    paths:
-      - "cmd/lambda/**"
-      - "tests/integration/**"
-      - ".github/workflows/go-tests.yml"
 
 permissions:
   contents: read
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.filter.outputs.go }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect Go-relevant changes
+        id: filter
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "push" ]; then
+            echo "push to main: always run"
+            echo "go=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if git diff --name-only "$BASE_SHA" "$HEAD_SHA" | \
+             grep -qE '^(cmd/lambda/|tests/integration/|\.github/workflows/go-tests\.yml$)'; then
+            echo "Go-relevant paths changed"
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "no Go-relevant changes"
+            echo "go=false" >> "$GITHUB_OUTPUT"
+          fi
+
   go-test:
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -33,6 +60,8 @@ jobs:
         run: go test -v -race ./...
 
   go-dep-check:
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
