@@ -44,47 +44,37 @@ jobs:
 
   go-test:
     needs: changes
+    if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cmd/lambda
     steps:
-      - if: needs.changes.outputs.go == 'true'
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - if: needs.changes.outputs.go == 'true'
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: cmd/lambda/go.mod
 
-      - if: needs.changes.outputs.go == 'true'
-        name: Test
-        working-directory: cmd/lambda
+      - name: Test
         run: go test -v -race ./...
-
-      - if: needs.changes.outputs.go != 'true'
-        name: Skip (no Go changes)
-        run: echo "No Go-relevant paths changed; reporting success without running tests."
 
   go-dep-check:
     needs: changes
+    if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tests/integration
     steps:
-      - if: needs.changes.outputs.go == 'true'
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - if: needs.changes.outputs.go == 'true'
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: tests/integration/go.mod
 
-      - if: needs.changes.outputs.go == 'true'
-        name: Build
-        working-directory: tests/integration
+      - name: Build
         run: go build ./...
 
-      - if: needs.changes.outputs.go == 'true'
-        name: Vet
-        working-directory: tests/integration
+      - name: Vet
         run: go vet ./...
-
-      - if: needs.changes.outputs.go != 'true'
-        name: Skip (no Go changes)
-        run: echo "No Go-relevant paths changed; reporting success without running tests."
