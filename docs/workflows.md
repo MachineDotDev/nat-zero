@@ -47,7 +47,7 @@ graph TB
 | `manual-pr-checks.yml` | `contents: write`, `id-token: write`, `issues: write`, `pull-requests: write` | — | — | — |
 | `integration-tests.yml` | `id-token: write`, `contents: read` | `INTEGRATION_ROLE_ARN` | `integration` | **leonardosul** |
 | `nat-images.yml` | `contents: read`, `id-token: write` (per-job escalations) | `AMI_BUILD_ROLE_ARN` | `ami-build` | **leonardosul** |
-| `release-please.yml` | `contents: write`, `pull-requests: write` | — | — | — |
+| `release-please.yml` | top-level `{}`; `release-please` job: `contents: write` + `pull-requests: write`; `build-lambda` job: `contents: write` | — | — | — |
 | `docs.yml` | `contents: write` | — | `github-pages` | — |
 
 ## Environments
@@ -551,6 +551,15 @@ flowchart LR
 - Ensures release-please's tags are immutable.
 - Admin role has `bypass_mode: always` (needed for emergency tag management).
 
+### Actions permissions
+
+Repo-level Actions settings that back the workflow security model:
+
+- **Allowed actions**: the `selected` allowlist permits only GitHub-owned actions plus the publisher patterns `hashicorp/*`, `aws-actions/*`, `googleapis/*`, and `pre-commit/*`. Any new third-party action outside these patterns is blocked at run time.
+- **SHA-pinned references** (convention): every `uses:` reference in this repo's workflow files pins to a full-length commit SHA (e.g. `actions/checkout@34e114...f8d5 # v4`). This closes the "supply-chain tag moves" attack where an upstream action author silently retags to malicious code. The repo-wide `sha_pinning_required` enforcement setting is **not** enabled — it rejects transitive action references inside composite actions (e.g. `pre-commit/action` uses `actions/cache@v4` internally, and the enforcement check blocks the whole workflow). Pinning is maintained by convention, not by the repo-level toggle.
+- **Default workflow permissions**: `read` — any workflow that needs write permissions must declare them explicitly at the workflow or job level.
+- **`can_approve_pull_request_reviews: true`** for the default `GITHUB_TOKEN`: the token can approve PRs (used by release-please's own automation). This is narrower than it sounds because every workflow declares its own `permissions:` block.
+
 ### Merge decision flow
 
 ```mermaid
@@ -634,10 +643,11 @@ The module intentionally supports exactly three ways to supply Lambda code:
 
 ## Known gaps
 
-- No auto-merge for Dependabot bumps — every PR requires manual approval and bypass.
+- No auto-merge for Dependabot bumps — every PR requires manual approval and bypass. Intentional: bumps must be eyeballed so the maintainer can decide whether to label for integration testing.
 - No scheduled integration tests — only on label or AMI release.
 - No CodeQL / SAST.
 - No container or AMI vulnerability scanning beyond the pre-commit secret scan.
 - No `terraform plan` preview on PRs.
 - No `packer validate` check on PRs that only touch `ami/**`.
-- No `deployment_branch_policy` on `integration` or `ami-build` environments — approval is the sole gate on who can deploy and from which branch.
+- No `deployment_branch_policy` on `integration` or `ami-build` environments. The policy would need to allow any PR branch (because label-triggered integration runs target arbitrary PR branches), which reduces the restriction to a wildcard that adds no real protection. Approval remains the sole meaningful gate on environment deployments.
+- `integration-tests.yml` concurrency uses `cancel-in-progress: false`. Cancelling a run mid-`terraform apply` can leak real AWS resources (NAT instances, EIPs, ENIs) that a teardown step was about to destroy. Letting queued runs wait is cheaper than cleaning up leaks.
