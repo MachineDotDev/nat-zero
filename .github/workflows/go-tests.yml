@@ -1,51 +1,90 @@
 name: Go Tests
 
 on:
-  pull_request:
-    paths:
-      - "cmd/lambda/**"
-      - "tests/integration/**"
-      - ".github/workflows/go-tests.yml"
+  pull_request: {}
   push:
     branches: [main]
-    paths:
-      - "cmd/lambda/**"
-      - "tests/integration/**"
-      - ".github/workflows/go-tests.yml"
 
 permissions:
   contents: read
 
 jobs:
-  go-test:
+  changes:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: cmd/lambda
+    outputs:
+      go: ${{ steps.filter.outputs.go }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
 
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      - name: Detect Go-relevant changes
+        id: filter
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "push" ]; then
+            echo "push to main: always run"
+            echo "go=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if git diff --name-only "$BASE_SHA" "$HEAD_SHA" | \
+             grep -qE '^(cmd/lambda/|tests/integration/|\.github/workflows/go-tests\.yml$)'; then
+            echo "Go-relevant paths changed"
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "no Go-relevant changes"
+            echo "go=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  go-test:
+    needs: changes
+    runs-on: ubuntu-latest
+    steps:
+      - if: needs.changes.outputs.go == 'true'
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - if: needs.changes.outputs.go == 'true'
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: cmd/lambda/go.mod
 
-      - name: Test
+      - if: needs.changes.outputs.go == 'true'
+        name: Test
+        working-directory: cmd/lambda
         run: go test -v -race ./...
 
-  go-dep-check:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: tests/integration
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - if: needs.changes.outputs.go != 'true'
+        name: Skip (no Go changes)
+        run: echo "No Go-relevant paths changed; reporting success without running tests."
 
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+  go-dep-check:
+    needs: changes
+    runs-on: ubuntu-latest
+    steps:
+      - if: needs.changes.outputs.go == 'true'
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - if: needs.changes.outputs.go == 'true'
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: tests/integration/go.mod
 
-      - name: Build
+      - if: needs.changes.outputs.go == 'true'
+        name: Build
+        working-directory: tests/integration
         run: go build ./...
 
-      - name: Vet
+      - if: needs.changes.outputs.go == 'true'
+        name: Vet
+        working-directory: tests/integration
         run: go vet ./...
+
+      - if: needs.changes.outputs.go != 'true'
+        name: Skip (no Go changes)
+        run: echo "No Go-relevant paths changed; reporting success without running tests."
