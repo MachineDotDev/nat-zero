@@ -229,7 +229,7 @@ flowchart TD
     PR --> CHG[changes job runs<br/>every PR]
     CHG --> PATH{Go-relevant paths<br/>changed?}
     PATH -->|yes| GOT[go-test + go-dep-check run]
-    PATH -->|no| GOT_SKIP[go-test + go-dep-check skipped<br/>required check still satisfied]
+    PATH -->|no| GOT_SKIP[go-test + go-dep-check skipped<br/>merge blocked — maintainer bypass expected]
     GOT --> GOT_RESULT{pass?}
     GOT_RESULT -->|yes| GOT_OK[go-test passes]
     GOT_RESULT -->|no| GOT_FAIL[go-test fails<br/>merge blocked]
@@ -276,8 +276,23 @@ Three jobs with explicit gating:
 - **PR trigger**: every PR (no path filter).
 - **Push trigger**: every push to `main`.
 - **Required check name**: `go-test`.
-- **Why this design**: required status checks deadlock if a path-filtered workflow doesn't run. The previous design (path-filtered at the trigger level) left docs-only / Terraform-only / CI-only PRs with a missing `go-test` check that could only merge via admin bypass. The gating job solves this while keeping the real test work behind a path check.
-- **Reading the rollup**: on a Go-touching PR, `changes`, `go-test`, and `go-dep-check` all run and report success. On a non-Go PR, `changes` reports success and both `go-test` and `go-dep-check` show as skipped. GitHub's ruleset evaluation treats skipped required jobs as satisfied, so the required `go-test` check passes in both cases.
+- **Why this design**: we want `go-test` to be a required check, but we do not want to pay the runner cost of the full Go test suite on a docs-only or Terraform-only PR. The gating `changes` job always runs and publishes a `needs.changes.outputs.go` flag; the real work only spins up when that flag says the diff touches Go-relevant paths. This keeps the required-check contract honest: the check exists for every PR, and when it's genuinely not applicable it honestly reports as skipped rather than being faked to success.
+- **Reading the rollup**: on a Go-touching PR, `changes`, `go-test`, and `go-dep-check` all run and report success. On a non-Go PR, `changes` reports success and both `go-test` and `go-dep-check` show as skipped — which is the correct signal. The merge will then be blocked by the required-check rule (see the note below) and the maintainer decides whether "skipped" is appropriate for that PR before bypassing.
+
+#### On required checks that can legitimately skip
+
+The `go-test` and `go-dep-check` jobs are required status checks but will report as `SKIPPED` on any PR that does not touch Go code (`cmd/lambda/**`, `tests/integration/**`, or this workflow file). GitHub's ruleset evaluation **treats a skipped required check as unsatisfied**, which means PRs whose Go jobs skip will show `mergeStateStatus: BLOCKED` even when every other check is green.
+
+**This is intentional and not a bug.** The flow is:
+
+1. CI reports honestly — `go-test: SKIPPED` on a docs/TF-only PR.
+2. The ruleset correctly refuses to auto-merge a PR with a skipped required check.
+3. The maintainer looks at the diff, sees "this is a docs change, of course `go-test` skipped," and uses the admin bypass (`Merge without waiting for requirements`) to merge.
+4. Every bypass is recorded in the repo audit log.
+
+If `go-test` skips on a PR that _does_ touch Go code, that is a real red flag — the gating logic is wrong and the workflow change should be investigated before merging. The skip is load-bearing signal, not noise. An always-green "fake success" variant would hide that signal behind a checkmark.
+
+The admin bypass is the intended merge path for legitimately-skipped cases. This is why the ruleset grants the Admin role `bypass_mode: pull_request` — to give a responsible maintainer an explicit, audited override for cases the rule engine cannot reason about on its own.
 
 ### Semantic PR Title (`semantic-pr-title.yml`)
 
@@ -513,21 +528,25 @@ flowchart LR
 ```mermaid
 flowchart TD
     PUSH[Direct push to main] --> RULE1[blocked by ruleset<br/>PR required]
-    PR_MERGE[PR merge to main] --> CHECKS{required checks pass?}
-    CHECKS -->|precommit + go-test + semantic-pr-title| APPROV{1 approval?}
+    PR_MERGE[PR merge to main] --> CHECKS{required checks<br/>all SUCCESS?}
+    CHECKS -->|yes| APPROV{1 approval?}
     APPROV -->|yes| LASTPUSH{Last pusher == approver?}
     LASTPUSH -->|no| CONVRES{Conversations resolved?}
     LASTPUSH -->|yes| BLOCK1[blocked by<br/>require_last_push_approval]
     CONVRES -->|yes| SQUASH[squash-merge allowed]
     CONVRES -->|no| BLOCK2[blocked — unresolved threads]
 
+    CHECKS -->|required check<br/>SKIPPED or FAILED| BLOCK3[blocked on checks<br/>— skipped counts as unsatisfied]
+
     BLOCK1 --> ADMIN{Admin + bypass_mode:<br/>pull_request?}
     BLOCK2 --> ADMIN
+    BLOCK3 --> ADMIN
     APPROV -->|no| ADMIN
-    CHECKS -->|no| ADMIN
     ADMIN -->|yes| OVERRIDE[Merge without<br/>waiting for requirements]
     ADMIN -->|no| DENY[merge denied]
 ```
+
+Note: a `SKIPPED` required check is treated as unsatisfied by the ruleset, not as success. This is by design — see the [on-required-checks-that-can-legitimately-skip](#on-required-checks-that-can-legitimately-skip) note above. When `go-test` is skipped because the PR doesn't touch Go code, the bypass is the intended merge path and the maintainer is the final judge of whether the skip was appropriate.
 
 ## Lifecycle of a NAT AMI
 
@@ -555,7 +574,9 @@ Open PR
   -> Add "nat-images" label -> router calls the NAT image build / integration gate
   -> threads resolved
   -> 1 approval
-  -> Squash merge to main (or admin bypass when require_last_push_approval blocks)
+  -> Squash merge to main, OR admin bypass when:
+       - require_last_push_approval blocks (solo maintainer, Dependabot PRs), or
+       - a required check (e.g. go-test) skipped because it was not applicable
 
 Post-merge to main:
   -> release-please creates / updates a release PR (if feat/fix commits exist)
