@@ -30,7 +30,7 @@ graph TB
 |----------|------|----------|-----------------|
 | Pre-commit | `precommit.yml` | All PRs | Yes (`precommit`) |
 | Go Tests | `go-tests.yml` | Every PR + push to `main` (gating job skips `go-test`/`go-dep-check` when no Go-relevant paths changed) | Yes (`go-test`) |
-| Semantic PR Title | `semantic-pr-title.yml` | All PRs (`pull_request_target`) | Yes (`semantic-pr-title`) |
+| Semantic PR Title | `semantic-pr-title.yml` | All PRs (`pull_request`) | Yes (`semantic-pr-title`) |
 | Manual PR Checks | `manual-pr-checks.yml` | PR labeled `integration-test` or `nat-images` | No (router) |
 | Integration Tests | `integration-tests.yml` | Manual dispatch; reusable workflow | No (called via router) |
 | NAT Images | `nat-images.yml` | Manual dispatch; reusable workflow | No (promotion workflow) |
@@ -43,7 +43,7 @@ graph TB
 |---|---|---|---|---|
 | `precommit.yml` | `contents: read` | — | — | — |
 | `go-tests.yml` | `contents: read` | — | — | — |
-| `semantic-pr-title.yml` | `contents: read`, `pull-requests: read` | — | — | — |
+| `semantic-pr-title.yml` | `contents: read` | — | — | — |
 | `manual-pr-checks.yml` | `contents: write`, `id-token: write`, `issues: write`, `pull-requests: write` | — | — | — |
 | `integration-tests.yml` | `id-token: write`, `contents: read` | `INTEGRATION_ROLE_ARN` | `integration` | **leonardosul** |
 | `nat-images.yml` | `contents: read`, `id-token: write` (per-job escalations) | `AMI_BUILD_ROLE_ARN` | `ami-build` | **leonardosul** |
@@ -94,7 +94,7 @@ sequenceDiagram
 
     You->>GH: open PR from fix/xyz
     GH->>Actions: fire pull_request
-    GH->>Actions: fire pull_request_target (title check)
+    Note right of GH: precommit, go-tests, and<br/>semantic-pr-title all triggered<br/>via pull_request
     par auto checks
         Actions->>Actions: precommit
         Actions->>Actions: go-tests (if paths match)
@@ -136,8 +136,7 @@ sequenceDiagram
         Actions->>Actions: manual-pr-checks router
         Note right of Actions: jobs skipped<br/>(label not integration-test / nat-images)
     end
-    GH->>Actions: fire pull_request (Go Tests, Pre-commit)
-    GH->>Actions: fire pull_request_target (Semantic PR Title)
+    GH->>Actions: fire pull_request (Go Tests, Pre-commit, Semantic PR Title)
     Actions-->>GH: auto checks pass
     alt you want to run integration
         You->>GH: add label "integration-test"
@@ -167,13 +166,13 @@ sequenceDiagram
     Note over RP: Triggered by push to main<br/>with conventional commits
     RP->>GH: open / update PR from<br/>release-please--branches--main
     RP->>GH: label "autorelease: pending"
-    GH->>Actions: fire pull_request (Go Tests)
-    Note right of Actions: skipped — paths only cover<br/>cmd/lambda and tests/integration
-    GH->>Actions: fire pull_request (Pre-commit)
-    Note right of Actions: pre-commit runs only on changed files<br/>(CHANGELOG.md, version refs)
-    GH->>Actions: fire pull_request_target (Semantic PR Title)
+    Note over GH: PR authored by github-actions[bot] —<br/>first-time-contributor gate holds workflow runs<br/>with action_required status
+    You->>GH: click "Approve and run workflows"<br/>(Actions tab on the PR)
+    GH->>Actions: fire pull_request (Go Tests, Pre-commit, Semantic PR Title)
+    Note right of Actions: Go Tests: changes job detects no Go paths,<br/>go-test + go-dep-check skipped
+    Note right of Actions: Pre-commit: runs only on changed files<br/>(CHANGELOG.md, version refs)
     Actions-->>GH: title "chore(main): release X.Y.Z" valid
-    You->>GH: approve, merge
+    You->>GH: approve PR, click Merge (admin bypass)
     GH->>Actions: fire push:main
     Actions->>Actions: release-please job runs
     Actions->>GH: tag vX.Y.Z, create GitHub Release
@@ -298,10 +297,11 @@ The admin bypass is the intended merge path for legitimately-skipped cases. This
 
 Validates that PR titles follow Conventional Commits so squash-merge commit messages stay parseable by release-please.
 
-- **Trigger**: `pull_request_target` on `opened`, `edited`, `synchronize`, `reopened`.
+- **Trigger**: `pull_request` on `opened`, `edited`, `synchronize`, `reopened`.
 - **Required check name**: `semantic-pr-title`.
 - **Allowed prefixes**: `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style`, `test`.
 - **Logic**: pure bash regex on `github.event.pull_request.title` — no checkout, no code execution from the PR.
+- **Why not `pull_request_target`**: GitHub silently suppresses `pull_request_target` for PRs authored by GitHub App installations (release-please, Dependabot under some configurations). The release-please PRs in this repo's history have zero runs of `semantic-pr-title` for exactly that reason — each one was only mergeable via admin bypass. Using `pull_request` fires for every PR regardless of author, which restores the required-check contract. It is also strictly safer: this workflow only reads the PR title from the event payload (no checkout, no secrets, no API calls), so there is nothing in the elevated `pull_request_target` context that would benefit it, and avoiding `pull_request_target` closes a latent RCE footgun that any future checkout-based edit would open.
 
 ### Manual PR Checks (`manual-pr-checks.yml`)
 
@@ -443,6 +443,34 @@ That is the full release artifact flow. There is no second workflow that edits t
 | `docs:` | Documentation | No |
 | `chore:` | Miscellaneous | No |
 | `feat!:` or `BREAKING CHANGE:` | Features | Yes (major bump) |
+
+## Bot-authored PRs and the first-time-contributor gate
+
+GitHub's Actions settings include an approval gate for workflow runs on PRs from "first-time contributors" (outside the repo's collaborator list). This setting applies not just to forks but also to PRs authored by GitHub Apps that do not hold a persistent collaborator role — which includes `github-actions[bot]` (release-please) and, under some configurations, Dependabot.
+
+When the gate fires, the relevant workflow runs sit with conclusion `action_required` until a maintainer clicks **Approve and run workflows** on the PR's Actions tab. No checks complete until then, so required-status-check evaluation is stuck too.
+
+**This is a deliberate safety feature, not a misconfiguration.** Loosening it to "approval only for first-time contributors who are new to GitHub" (the least strict option) means any random GitHub user's first PR to the repo auto-runs workflows. For a public infra module with real users, that is too permissive. The operational cost is low: release PRs arrive once every week or two, and the click is immediate.
+
+The gate configuration lives at **Settings → Actions → General → Fork pull request workflows from outside collaborators**. It is **not** exposed in the REST or GraphQL APIs as a separate setting you can audit programmatically; the signature is `conclusion: action_required` on runs whose `triggering_actor` is `github-actions[bot]`.
+
+### Separately: `pull_request_target` suppression for GitHub Apps
+
+Independent of the first-time-contributor gate, GitHub silently suppresses the `pull_request_target` event for PRs authored by GitHub App installations. This means any workflow that uses `pull_request_target` (and only that trigger) **never runs for release-please or Dependabot PRs**, regardless of whether you approve the first-time-contributor gate.
+
+This is why `semantic-pr-title.yml` was switched from `pull_request_target` to `pull_request` — the previous trigger meant release PRs accumulated with a permanently-missing required check.
+
+### What to expect on release-please PRs
+
+1. PR appears, authored by `github-actions[bot]`.
+2. Workflow runs sit with `action_required`. The rollup shows no completed checks.
+3. You click **Approve and run workflows** once.
+4. All PR workflows execute: `Go Tests`, `Pre-commit`, `Semantic PR Title`.
+5. `Go Tests` runs the `changes` gating job and then skips `go-test` + `go-dep-check` because release PRs don't touch Go paths. `Pre-commit` runs against the CHANGELOG + version diffs. `Semantic PR Title` validates the title.
+6. Because `go-test` (a required check) reported `SKIPPED`, and because the release PR has no non-bot approval to satisfy `require_last_push_approval`, the PR shows `mergeStateStatus: BLOCKED`.
+7. You review the diff (version bump + changelog only) and merge via **Merge without waiting for requirements**. The admin-bypass path described in the [ruleset](#main-branch-ruleset) is the intended merge mechanic for this PR type.
+
+Each release PR therefore requires **two explicit maintainer actions**: one to unlock the workflows, one to merge past the required-check + approval gates. Both are audited. This is the cost of keeping the first-time-contributor gate strict and keeping the required-check contract honest.
 
 ## The integration-tests fan-in
 
