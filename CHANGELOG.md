@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/MachineDotDev/nat-zero/compare/v0.4.2...v0.5.0) (2026-04-29)
+
+
+### Features
+
+* expose configurable EBS IOPS and throughput, default to gp3 baseline ([#39](https://github.com/MachineDotDev/nat-zero/issues/39)) ([b6c75c9](https://github.com/MachineDotDev/nat-zero/commit/b6c75c953d330a60b564258ae891aa8dfac59569))
+
 ## [0.4.2](https://github.com/MachineDotDev/nat-zero/compare/v0.4.1...v0.4.2) (2026-04-22)
 
 
