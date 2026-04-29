@@ -62,6 +62,18 @@ variable "block_device_size" {
   description = "Size in GB of the root EBS volume"
 }
 
+variable "block_device_iops" {
+  type        = number
+  default     = 3000
+  description = "Provisioned IOPS for the gp3 root EBS volume. 3000 is the gp3 baseline included at no extra cost."
+}
+
+variable "block_device_throughput" {
+  type        = number
+  default     = 125
+  description = "Provisioned throughput in MB/s for the gp3 root EBS volume. 125 is the gp3 baseline included at no extra cost."
+}
+
 variable "encrypt_root_volume" {
   type        = bool
   default     = true

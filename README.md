@@ -183,7 +183,9 @@ No modules.
 | <a name="input_ami_name_pattern"></a> [ami\_name\_pattern](#input\_ami\_name\_pattern) | AMI name pattern used when resolving the default nat-zero AMI. Override this to use your own shared AMI. | `string` | `"nat-zero-al2023-minimal-arm64-20260306-064438"` | no |
 | <a name="input_ami_owner_account"></a> [ami\_owner\_account](#input\_ami\_owner\_account) | Owner account ID used when resolving the default nat-zero AMI by name pattern. Override this to use your own shared AMI. | `string` | `"590144423513"` | no |
 | <a name="input_availability_zones"></a> [availability\_zones](#input\_availability\_zones) | List of availability zones to deploy NAT instances in | `list(string)` | n/a | yes |
+| <a name="input_block_device_iops"></a> [block\_device\_iops](#input\_block\_device\_iops) | Provisioned IOPS for the gp3 root EBS volume. 3000 is the gp3 baseline included at no extra cost. | `number` | `3000` | no |
 | <a name="input_block_device_size"></a> [block\_device\_size](#input\_block\_device\_size) | Size in GB of the root EBS volume | `number` | `10` | no |
+| <a name="input_block_device_throughput"></a> [block\_device\_throughput](#input\_block\_device\_throughput) | Provisioned throughput in MB/s for the gp3 root EBS volume. 125 is the gp3 baseline included at no extra cost. | `number` | `125` | no |
 | <a name="input_build_lambda_locally"></a> [build\_lambda\_locally](#input\_build\_lambda\_locally) | Build the Lambda binary from Go source during apply instead of downloading a pre-compiled release. This is primarily for local development and may require a second apply after code changes. | `bool` | `false` | no |
 | <a name="input_enable_logging"></a> [enable\_logging](#input\_enable\_logging) | Create a CloudWatch log group for the Lambda function | `bool` | `true` | no |
 | <a name="input_encrypt_root_volume"></a> [encrypt\_root\_volume](#input\_encrypt\_root\_volume) | Encrypt the root EBS volume. | `bool` | `true` | no |
