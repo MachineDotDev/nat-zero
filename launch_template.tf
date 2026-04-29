@@ -23,8 +23,8 @@ resource "aws_launch_template" "nat_launch_template" {
     ebs {
       volume_size = var.block_device_size
       volume_type = "gp3"
-      iops        = 3000
-      throughput  = 250
+      iops        = var.block_device_iops
+      throughput  = var.block_device_throughput
       encrypted   = var.encrypt_root_volume
     }
   }
