@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/MachineDotDev/nat-zero/compare/v0.5.0...v0.5.1) (2026-05-01)
+
+
+### Documentation
+
+* migrate to artifact-based GitHub Pages deployment ([#42](https://github.com/MachineDotDev/nat-zero/issues/42)) ([15f0a3e](https://github.com/MachineDotDev/nat-zero/commit/15f0a3e9c8a19677e3e315de8f513f8f2f209a4b))
+
 ## [0.5.0](https://github.com/MachineDotDev/nat-zero/compare/v0.4.2...v0.5.0) (2026-04-29)
 
 
