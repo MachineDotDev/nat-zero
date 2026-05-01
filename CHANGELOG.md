@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.3](https://github.com/MachineDotDev/nat-zero/compare/v0.5.2...v0.5.3) (2026-05-01)
+
+
+### Documentation
+
+* add release version and license badges ([#46](https://github.com/MachineDotDev/nat-zero/issues/46)) ([3a9f614](https://github.com/MachineDotDev/nat-zero/commit/3a9f614ac20a750eec7bca3539f39c4f394b1e52))
+
 ## [0.5.2](https://github.com/MachineDotDev/nat-zero/compare/v0.5.1...v0.5.2) (2026-05-01)
 
 
