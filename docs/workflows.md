@@ -555,7 +555,7 @@ flowchart LR
 Repo-level Actions settings that back the workflow security model:
 
 - **Allowed actions**: the `selected` allowlist permits only GitHub-owned actions plus the publisher patterns `hashicorp/*`, `aws-actions/*`, `googleapis/*`, `pre-commit/*`, and `astral-sh/*`. Any new third-party action outside these patterns is blocked at run time.
-- **SHA-pinned references** (enforced): every `uses:` reference in this repo's workflow files pins to a full-length commit SHA (e.g. `actions/checkout@34e114...f8d5 # v4`). This closes the "supply-chain tag moves" attack where an upstream action author silently retags to malicious code. The repo-wide `sha_pinning_required` setting is enabled, so PRs using tag-only references (e.g. `@v4`) are rejected.
+- **SHA-pinned references** (convention): every `uses:` reference in this repo's workflow files pins to a full-length commit SHA (e.g. `actions/checkout@34e114...f8d5 # v4`). This closes the "supply-chain tag moves" attack where an upstream action author silently retags to malicious code. The repo-wide `sha_pinning_required` enforcement setting is **not** enabled — it rejects transitive action references inside composite actions (e.g. `pre-commit/action` uses `actions/cache@v4` internally, and the enforcement check blocks the whole workflow). Pinning is maintained by convention, not by the repo-level toggle.
 - **Default workflow permissions**: `read` — any workflow that needs write permissions must declare them explicitly at the workflow or job level.
 - **`can_approve_pull_request_reviews: false`** for the default `GITHUB_TOKEN`: workflows cannot approve PRs via the token. This prevents a compromised or malicious workflow from self-approving.
 
