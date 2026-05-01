@@ -6,7 +6,6 @@ repo_name: nat-zero
 
 theme:
   name: material
-  custom_dir: docs/overrides
   palette:
     - scheme: default
       primary: indigo

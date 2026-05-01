@@ -17,6 +17,7 @@ vendor/
 
 # Docs
 site/
+.venv/
 
 # Test cache
 .pytest_cache/
