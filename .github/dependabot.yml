@@ -1,0 +1,38 @@
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: gomod
+    directory: /cmd/lambda
+    schedule:
+      interval: monthly
+    groups:
+      go-lambda:
+        patterns:
+          - "*"
+
+  - package-ecosystem: gomod
+    directory: /tests/integration
+    schedule:
+      interval: monthly
+    groups:
+      go-integration:
+        patterns:
+          - "*"
+
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      docs:
+        patterns:
+          - "*"
