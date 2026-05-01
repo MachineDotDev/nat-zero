@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.4](https://github.com/MachineDotDev/nat-zero/compare/v0.5.3...v0.5.4) (2026-05-01)
+
+
+### Bug Fixes
+
+* use fix(deps) prefix for Lambda dependency bumps ([#54](https://github.com/MachineDotDev/nat-zero/issues/54)) ([f0c0ae1](https://github.com/MachineDotDev/nat-zero/commit/f0c0ae1f0ac1c8ebb0570db445d728eed911f5cb))
+
 ## [0.5.3](https://github.com/MachineDotDev/nat-zero/compare/v0.5.2...v0.5.3) (2026-05-01)
 
 
