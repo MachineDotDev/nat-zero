@@ -15,11 +15,18 @@ jobs:
     if: ${{ github.event.label.name == 'integration-test' }}
     uses: ./.github/workflows/integration-tests.yml
     secrets: inherit
+    permissions:
+      id-token: write
+      contents: read
 
   nat-images:
     if: ${{ github.event.label.name == 'nat-images' }}
     uses: ./.github/workflows/nat-images.yml
     secrets: inherit
+    permissions:
+      id-token: write
+      contents: write
+      pull-requests: write
 
   clear-trigger-label:
     if: >-
@@ -29,6 +36,8 @@ jobs:
       - integration
       - nat-images
     runs-on: ubuntu-latest
+    permissions:
+      issues: write
     steps:
       - name: Remove trigger label
         continue-on-error: true

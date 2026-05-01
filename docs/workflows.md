@@ -44,7 +44,7 @@ graph TB
 | `precommit.yml` | `contents: read` | — | — | — |
 | `go-tests.yml` | `contents: read` | — | — | — |
 | `semantic-pr-title.yml` | `contents: read` | — | — | — |
-| `manual-pr-checks.yml` | `contents: write`, `id-token: write`, `issues: write`, `pull-requests: write` | — | — | — |
+| `manual-pr-checks.yml` | `contents: write`, `id-token: write`, `issues: write`, `pull-requests: write` (workflow ceiling; each job narrows to its minimum) | — | — | — |
 | `integration-tests.yml` | `id-token: write`, `contents: read` | `INTEGRATION_ROLE_ARN` | `integration` | **leonardosul** |
 | `nat-images.yml` | `contents: read`, `id-token: write` (per-job escalations) | `AMI_BUILD_ROLE_ARN` | `ami-build` | **leonardosul** |
 | `release-please.yml` | top-level `{}`; `release-please` job: `contents: write` + `pull-requests: write`; `build-lambda` job: `contents: write` | — | — | — |
