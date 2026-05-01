@@ -34,7 +34,7 @@ graph TB
 | Manual PR Checks | `manual-pr-checks.yml` | PR labeled `integration-test` or `nat-images` | No (router) |
 | Integration Tests | `integration-tests.yml` | Manual dispatch; reusable workflow | No (called via router) |
 | NAT Images | `nat-images.yml` | Manual dispatch; reusable workflow | No (promotion workflow) |
-| Docs | `docs.yml` | Push to `main` when `docs/**`, `mkdocs.yml`, `README.md`, or `*.tf` change | No (post-merge deploy) |
+| Docs | `docs.yml` | Push to `main` when `docs/**`, `mkdocs.yml`, `.github/workflows/docs.yml`, `README.md`, or `*.tf` change; manual dispatch | No (post-merge deploy) |
 | Release Please | `release-please.yml` | Push to `main`; manual dispatch | No (post-merge) |
 
 ## Permission and approval matrix
@@ -44,11 +44,11 @@ graph TB
 | `precommit.yml` | `contents: read` | — | — | — |
 | `go-tests.yml` | `contents: read` | — | — | — |
 | `semantic-pr-title.yml` | `contents: read` | — | — | — |
-| `manual-pr-checks.yml` | `contents: write`, `id-token: write`, `issues: write`, `pull-requests: write` | — | — | — |
+| `manual-pr-checks.yml` | `contents: write`, `id-token: write`, `issues: write`, `pull-requests: write` (workflow ceiling; each job narrows to its minimum) | — | — | — |
 | `integration-tests.yml` | `id-token: write`, `contents: read` | `INTEGRATION_ROLE_ARN` | `integration` | **leonardosul** |
 | `nat-images.yml` | `contents: read`, `id-token: write` (per-job escalations) | `AMI_BUILD_ROLE_ARN` | `ami-build` | **leonardosul** |
 | `release-please.yml` | top-level `{}`; `release-please` job: `contents: write` + `pull-requests: write`; `build-lambda` job: `contents: write` | — | — | — |
-| `docs.yml` | `contents: write` | — | `github-pages` | — |
+| `docs.yml` | `contents: read`, `pages: write`, `id-token: write` | — | `github-pages` | — |
 
 ## Environments
 
@@ -63,11 +63,8 @@ graph LR
         AR[Required reviewer: leonardosul<br/>can_admins_bypass: false]
         AS[Secret: AMI_BUILD_ROLE_ARN]
     end
-    subgraph release ["release env"]
-        RLR[No reviewers<br/>can_admins_bypass: true]
-    end
     subgraph pages ["github-pages env"]
-        GPR[Branch policy: custom<br/>can_admins_bypass: true]
+        GPR[Branch policy: protected branches only<br/>can_admins_bypass: true]
     end
 ```
 
@@ -394,9 +391,11 @@ For pre-merge validation on a branch, add the `nat-images` label to the PR. The 
 
 Deploys MkDocs Material to GitHub Pages at <https://nat-zero.machine.dev/>.
 
-- **Trigger**: push to `main` when `docs/**`, `mkdocs.yml`, `README.md`, or `*.tf` change.
+- **Trigger**: push to `main` when `docs/**`, `mkdocs.yml`, `.github/workflows/docs.yml`, `README.md`, or `*.tf` change. Also supports `workflow_dispatch` for manual re-deploys.
 - **Not a merge gate** — only runs post-merge.
-- **How**: `mkdocs gh-deploy --force` pushes the built site to the `gh-pages` branch, which GitHub Pages serves under the `nat-zero.machine.dev` CNAME.
+- **How**: two-job pipeline. The `build` job uses `uv` to install dependencies from `pyproject.toml` (dependency group `docs`, pinned via `uv.lock`), runs `mkdocs build` to produce the static site in `site/`, and uploads it as a GitHub Pages artifact. The `deploy` job uses `actions/deploy-pages` to publish the artifact to the `github-pages` environment.
+- **Environment**: `github-pages` — deployment branch policy restricts deploys to protected branches only.
+- **Concurrency**: group `pages`, `cancel-in-progress: false`.
 
 ### Release Please (`release-please.yml`)
 
@@ -534,7 +533,7 @@ flowchart LR
 ### `main` branch ruleset
 
 - **Pull requests required** with:
-  - **1 required approval**
+  - **1 required approval from a code owner** — the `CODEOWNERS` file (`* @leonardosul`) means only the repo owner's approval satisfies this requirement. Reviews from non-code-owners are visible but do not count toward the required approval.
   - **Stale reviews dismissed on push**
   - **`require_last_push_approval: true`** — the last pusher cannot count as an approver of their own push. In a solo-maintained repo with Dependabot PRs this means admin bypass is often the expected merge path.
   - **All review threads must be resolved**
@@ -547,18 +546,18 @@ flowchart LR
 
 ### `tags` ruleset
 
-- Protects `refs/tags/v*` — no deletion or update of version tags.
-- Ensures release-please's tags are immutable.
-- Admin role has `bypass_mode: always` (needed for emergency tag management).
+- Protects `refs/tags/v*` — no creation, deletion, or update of version tags.
+- Ensures only admins can create version tags (via release-please or manually) and that existing tags are immutable.
+- Admin role has `bypass_mode: always` (needed for release-please tag creation and emergency tag management).
 
 ### Actions permissions
 
 Repo-level Actions settings that back the workflow security model:
 
-- **Allowed actions**: the `selected` allowlist permits only GitHub-owned actions plus the publisher patterns `hashicorp/*`, `aws-actions/*`, `googleapis/*`, and `pre-commit/*`. Any new third-party action outside these patterns is blocked at run time.
+- **Allowed actions**: the `selected` allowlist permits only GitHub-owned actions plus the publisher patterns `hashicorp/*`, `aws-actions/*`, `googleapis/*`, `pre-commit/*`, and `astral-sh/*`. Any new third-party action outside these patterns is blocked at run time.
 - **SHA-pinned references** (convention): every `uses:` reference in this repo's workflow files pins to a full-length commit SHA (e.g. `actions/checkout@34e114...f8d5 # v4`). This closes the "supply-chain tag moves" attack where an upstream action author silently retags to malicious code. The repo-wide `sha_pinning_required` enforcement setting is **not** enabled — it rejects transitive action references inside composite actions (e.g. `pre-commit/action` uses `actions/cache@v4` internally, and the enforcement check blocks the whole workflow). Pinning is maintained by convention, not by the repo-level toggle.
 - **Default workflow permissions**: `read` — any workflow that needs write permissions must declare them explicitly at the workflow or job level.
-- **`can_approve_pull_request_reviews: true`** for the default `GITHUB_TOKEN`: the token can approve PRs (used by release-please's own automation). This is narrower than it sounds because every workflow declares its own `permissions:` block.
+- **`can_approve_pull_request_reviews: false`** for the default `GITHUB_TOKEN`: workflows cannot approve PRs via the token. This prevents a compromised or malicious workflow from self-approving.
 
 ### Merge decision flow
 
@@ -617,7 +616,7 @@ Open PR
 
 Post-merge to main:
   -> release-please creates / updates a release PR (if feat/fix commits exist)
-  -> docs deploy (if docs, mkdocs.yml, README.md, or *.tf changed)
+  -> docs deploy (if docs, mkdocs.yml, docs workflow, README.md, or *.tf changed)
 
 Merge release PR:
   -> release-please creates GitHub Release + tag
