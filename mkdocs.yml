@@ -53,7 +53,6 @@ nav:
   - Examples: examples.md
   - Terraform Reference: reference.md
   - Testing: testing.md
-  - CI/CD Workflows: workflows.md
 
 extra:
   social:
