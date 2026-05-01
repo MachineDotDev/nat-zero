@@ -1,6 +1,8 @@
 # nat-zero
 
 [![Go Tests](https://github.com/MachineDotDev/nat-zero/actions/workflows/go-tests.yml/badge.svg?branch=main)](https://github.com/MachineDotDev/nat-zero/actions/workflows/go-tests.yml)
+[![Release](https://img.shields.io/github/v/release/MachineDotDev/nat-zero)](https://github.com/MachineDotDev/nat-zero/releases/latest)
+[![License: MIT](https://img.shields.io/github/license/MachineDotDev/nat-zero)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-nat--zero.machine.dev-blue)](https://nat-zero.machine.dev)
 
 **Scale-to-zero NAT instances for AWS.** Stop paying for NAT when nothing is running.
