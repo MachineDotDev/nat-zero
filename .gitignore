@@ -15,6 +15,9 @@ ami/manifest.json
 # Go
 vendor/
 
+# Docs
+site/
+
 # Test cache
 .pytest_cache/
 
