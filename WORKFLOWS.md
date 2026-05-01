@@ -546,9 +546,10 @@ flowchart LR
 
 ### `tags` ruleset
 
-- Protects `refs/tags/v*` — no creation, deletion, or update of version tags.
-- Ensures only admins can create version tags (via release-please or manually) and that existing tags are immutable.
-- Admin role has `bypass_mode: always` (needed for release-please tag creation and emergency tag management).
+- Protects `refs/tags/v*` — no deletion or update of version tags.
+- Ensures release-please's tags are immutable once created.
+- Tag **creation** is intentionally unrestricted. Release-please creates tags via the GitHub API using the `GITHUB_TOKEN`, which does not have an admin repository role — a `creation` rule would block it even with the admin bypass, because the bypass only applies to actors with the Admin role, not to the `GITHUB_TOKEN` used by workflows.
+- Admin role has `bypass_mode: always` (needed for emergency tag management).
 
 ### Actions permissions
 
