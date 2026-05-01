@@ -31,7 +31,7 @@ jobs:
             sudo apt-get update
             sudo apt-get install -y shellcheck
           fi
-          go install honnef.co/go/tools/cmd/staticcheck@2026.1
+          go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
           curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash
 
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
