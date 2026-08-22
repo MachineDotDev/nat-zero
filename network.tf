@@ -1,8 +1,8 @@
 # The network configuration for the NAT instance
 # Each of these resources is deployed one for each AZ, including EIPs, ENIs, and route table entries
 resource "aws_security_group" "nat_security_group" {
-  count       = local.nat_count
-  name_prefix = "${var.name}-${local.nat_azs[count.index]}-nat-sg"
+  count       = length(var.availability_zones)
+  name_prefix = "${var.name}-${var.availability_zones[count.index]}-nat-sg"
   vpc_id      = var.vpc_id
   description = "Security group for NAT instance ${var.name}"
 
@@ -11,7 +11,7 @@ resource "aws_security_group" "nat_security_group" {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
-    cidr_blocks = var.single_instance ? var.private_subnets_cidr_blocks : [var.private_subnets_cidr_blocks[count.index]]
+    cidr_blocks = [var.private_subnets_cidr_blocks[count.index]]
   }
 
   # Allow all outbound traffic to the internet
@@ -25,47 +25,47 @@ resource "aws_security_group" "nat_security_group" {
   tags = merge(
     local.common_tags,
     {
-      Name = "${var.name}-${local.nat_azs[count.index]}-nat-instance-sg",
-      AZ   = local.nat_azs[count.index],
+      Name = "${var.name}-${var.availability_zones[count.index]}-nat-instance-sg",
+      AZ   = var.availability_zones[count.index],
     },
   )
 }
 
 resource "aws_network_interface" "nat_public_network_interface" {
-  count             = local.nat_count
+  count             = length(var.availability_zones)
   subnet_id         = var.public_subnets[count.index]
   security_groups   = [aws_security_group.nat_security_group[count.index].id]
   source_dest_check = false
-  description       = "Public ENI for NAT instance ${var.name} in ${local.nat_azs[count.index]}"
+  description       = "Public ENI for NAT instance ${var.name} in ${var.availability_zones[count.index]}"
   tags = merge(
     local.common_tags,
     {
-      Name = "${var.name}-${local.nat_azs[count.index]}-nat-public-eni"
+      Name = "${var.name}-${var.availability_zones[count.index]}-nat-public-eni"
     },
   )
   depends_on = [aws_security_group.nat_security_group]
 }
 
 resource "aws_network_interface" "nat_private_network_interface" {
-  count             = local.nat_count
+  count             = length(var.availability_zones)
   security_groups   = [aws_security_group.nat_security_group[count.index].id]
   subnet_id         = var.private_subnets[count.index]
   source_dest_check = false
-  description       = "Private ENI for NAT instance ${var.name} in ${local.nat_azs[count.index]}"
+  description       = "Private ENI for NAT instance ${var.name} in ${var.availability_zones[count.index]}"
   tags = merge(
     local.common_tags,
     {
-      Name = "${var.name}-${local.nat_azs[count.index]}-nat-private-eni"
+      Name = "${var.name}-${var.availability_zones[count.index]}-nat-private-eni"
     },
   )
   depends_on = [aws_security_group.nat_security_group]
 }
 
 resource "aws_route" "nat_route" {
-  count                  = length(var.private_route_table_ids)
+  count                  = length(var.availability_zones)
   route_table_id         = var.private_route_table_ids[count.index]
   destination_cidr_block = "0.0.0.0/0"
-  network_interface_id   = aws_network_interface.nat_private_network_interface[var.single_instance ? 0 : count.index].id
+  network_interface_id   = aws_network_interface.nat_private_network_interface[count.index].id
   depends_on             = [aws_network_interface.nat_private_network_interface]
 }
 
