@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.0](https://github.com/MachineDotDev/nat-zero/compare/v0.5.4...v0.6.0) (2026-08-22)
+
+
+### Features
+
+* single_instance mode — one NAT per VPC with all-RT routing ([#64](https://github.com/MachineDotDev/nat-zero/issues/64)) ([19a326e](https://github.com/MachineDotDev/nat-zero/commit/19a326ebc8379015c7ca19c0666c2c3dffc87a01))
+
+
+### Bug Fixes
+
+* make the reconciler VPC-aware in single_instance mode ([#66](https://github.com/MachineDotDev/nat-zero/issues/66)) ([54cf440](https://github.com/MachineDotDev/nat-zero/commit/54cf440f0aedfddcab733c3577f47a20f5767366))
+
 ## [0.5.4](https://github.com/MachineDotDev/nat-zero/compare/v0.5.3...v0.5.4) (2026-05-01)
 
 
