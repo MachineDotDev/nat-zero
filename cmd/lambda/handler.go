@@ -21,6 +21,10 @@ type Handler struct {
 	IgnoreTagValue string
 	TargetVPC      string
 	ConfigVersion  string
+	// SingleInstanceAZ, when non-empty, means the module deployed exactly one
+	// NAT (in this AZ) serving every private route table in the VPC. All
+	// reconciliation then targets this AZ and workloads are counted VPC-wide.
+	SingleInstanceAZ string
 }
 
 // HandleRequest is the Lambda entry point.
@@ -49,6 +53,11 @@ func (h *Handler) handle(ctx context.Context, event Event) error {
 		return nil
 	}
 
+	if h.SingleInstanceAZ != "" {
+		// Single-NAT mode: a workload in ANY AZ must wake the one NAT, which
+		// only exists (template, ENIs) in SingleInstanceAZ.
+		az = h.SingleInstanceAZ
+	}
 	h.reconcile(ctx, az, vpc, event, triggerInst)
 	return nil
 }
