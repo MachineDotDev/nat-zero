@@ -56,6 +56,19 @@ variable "market_type" {
   }
 }
 
+variable "single_instance" {
+  type        = bool
+  default     = false
+  description = <<-EOT
+    Deploy one NAT instance for the whole VPC (in availability_zones[0])
+    instead of one per AZ. Every private route table still gets a default
+    route, all pointing at the single NAT's private ENI. Cross-AZ traffic
+    to the NAT incurs standard inter-AZ transfer charges - intended for
+    low-traffic environments where per-AZ NAT redundancy is not worth the
+    idle EBS/instance cost.
+  EOT
+}
+
 variable "block_device_size" {
   type        = number
   default     = 10
