@@ -1,4 +1,9 @@
 locals {
+  # In single-instance mode only AZ[0] gets a NAT (SG/ENIs/launch template);
+  # routes for every private route table all point at that one private ENI.
+  nat_azs   = var.single_instance ? [var.availability_zones[0]] : var.availability_zones
+  nat_count = length(local.nat_azs)
+
   common_tags = merge(
     {
       Name = var.name
@@ -8,8 +13,8 @@ locals {
 }
 
 resource "aws_launch_template" "nat_launch_template" {
-  count         = length(var.availability_zones)
-  name          = "${var.name}-${var.availability_zones[count.index]}-launch-template"
+  count         = local.nat_count
+  name          = "${var.name}-${local.nat_azs[count.index]}-launch-template"
   instance_type = var.instance_type
   image_id      = local.effective_ami_id
 
@@ -63,15 +68,15 @@ resource "aws_launch_template" "nat_launch_template" {
       local.common_tags,
       {
         (var.nat_tag_key) = var.nat_tag_value,
-        Name              = "${var.name}-${var.availability_zones[count.index]}-nat-instance"
+        Name              = "${var.name}-${local.nat_azs[count.index]}-nat-instance"
       },
     )
   }
 
-  description = "Launch template for NAT instance ${var.name} in ${var.availability_zones[count.index]}"
+  description = "Launch template for NAT instance ${var.name} in ${local.nat_azs[count.index]}"
   tags = merge(
     {
-      AvailabilityZone = var.availability_zones[count.index],
+      AvailabilityZone = local.nat_azs[count.index],
       VpcId            = var.vpc_id,
     },
     local.common_tags,
