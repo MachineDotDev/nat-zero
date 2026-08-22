@@ -100,8 +100,6 @@ resource "aws_lambda_function" "nat_zero" {
       IGNORE_TAG_KEY   = var.ignore_tag_key
       IGNORE_TAG_VALUE = var.ignore_tag_value
       TARGET_VPC_ID    = var.vpc_id
-      # Empty in per-AZ mode; the AZ hosting the only NAT in single mode.
-      SINGLE_INSTANCE_AZ = var.single_instance ? var.availability_zones[0] : ""
       CONFIG_VERSION = sha256(join(",", [
         coalesce(local.effective_ami_id, "missing"),
         var.instance_type,

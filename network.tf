@@ -11,7 +11,7 @@ resource "aws_security_group" "nat_security_group" {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
-    cidr_blocks = var.single_instance ? slice(var.private_subnets_cidr_blocks, 0, length(var.private_subnets)) : [var.private_subnets_cidr_blocks[count.index]]
+    cidr_blocks = var.single_instance ? var.private_subnets_cidr_blocks : [var.private_subnets_cidr_blocks[count.index]]
   }
 
   # Allow all outbound traffic to the internet

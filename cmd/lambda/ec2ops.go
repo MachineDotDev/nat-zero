@@ -68,20 +68,12 @@ func (h *Handler) getInstance(ctx context.Context, instanceID string) *Instance 
 // NAT instances and not ignored.
 func (h *Handler) findWorkloads(ctx context.Context, az, vpc string) []*Instance {
 	defer timed("find_workloads")()
-	filters := []ec2types.Filter{
-		{Name: aws.String("vpc-id"), Values: []string{vpc}},
-		{Name: aws.String("instance-state-name"), Values: []string{"pending", "running"}},
-	}
-	if h.SingleInstanceAZ == "" {
-		// Per-AZ mode: each AZ's NAT serves only its own AZ. In single-NAT
-		// mode the one NAT serves the whole VPC, so workloads anywhere must
-		// keep it running.
-		filters = append(filters, ec2types.Filter{
-			Name: aws.String("availability-zone"), Values: []string{az},
-		})
-	}
 	resp, err := h.EC2.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
-		Filters: filters,
+		Filters: []ec2types.Filter{
+			{Name: aws.String("availability-zone"), Values: []string{az}},
+			{Name: aws.String("vpc-id"), Values: []string{vpc}},
+			{Name: aws.String("instance-state-name"), Values: []string{"pending", "running"}},
+		},
 	})
 	if err != nil {
 		log.Printf("Error finding workloads: %v", err)

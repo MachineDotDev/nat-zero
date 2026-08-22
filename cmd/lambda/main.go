@@ -23,14 +23,13 @@ func main() {
 	}
 
 	h := &Handler{
-		EC2:              ec2.NewFromConfig(cfg),
-		NATTagKey:        envOr("NAT_TAG_KEY", "nat-zero:managed"),
-		NATTagValue:      envOr("NAT_TAG_VALUE", "true"),
-		IgnoreTagKey:     envOr("IGNORE_TAG_KEY", "nat-zero:ignore"),
-		IgnoreTagValue:   envOr("IGNORE_TAG_VALUE", "true"),
-		TargetVPC:        os.Getenv("TARGET_VPC_ID"),
-		ConfigVersion:    os.Getenv("CONFIG_VERSION"),
-		SingleInstanceAZ: os.Getenv("SINGLE_INSTANCE_AZ"),
+		EC2:            ec2.NewFromConfig(cfg),
+		NATTagKey:      envOr("NAT_TAG_KEY", "nat-zero:managed"),
+		NATTagValue:    envOr("NAT_TAG_VALUE", "true"),
+		IgnoreTagKey:   envOr("IGNORE_TAG_KEY", "nat-zero:ignore"),
+		IgnoreTagValue: envOr("IGNORE_TAG_VALUE", "true"),
+		TargetVPC:      os.Getenv("TARGET_VPC_ID"),
+		ConfigVersion:  os.Getenv("CONFIG_VERSION"),
 	}
 
 	lambda.Start(h.HandleRequest)
