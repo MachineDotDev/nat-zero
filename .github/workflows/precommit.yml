@@ -25,6 +25,10 @@ jobs:
 
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
 
+      - uses: terraform-linters/setup-tflint@19a52fbac37dacb22a09518e4ef6ee234f2d4987 # v4.1.1
+        with:
+          tflint_version: latest
+
       - name: Install tools
         run: |
           if ! command -v shellcheck >/dev/null 2>&1; then
@@ -32,7 +36,6 @@ jobs:
             sudo apt-get install -y shellcheck
           fi
           go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
-          curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:

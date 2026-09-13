@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.5](https://github.com/MachineDotDev/nat-zero/compare/v0.5.4...v0.5.5) (2026-09-13)
+
+
+### Bug Fixes
+
+* bump the go-lambda group across 1 directory with 5 updates ([#70](https://github.com/MachineDotDev/nat-zero/issues/70)) ([e52142d](https://github.com/MachineDotDev/nat-zero/commit/e52142d6f5c7a5060ea235cf505e5f97e840eec5))
+
 ## [0.5.4](https://github.com/MachineDotDev/nat-zero/compare/v0.5.3...v0.5.4) (2026-05-01)
 
 
