@@ -100,7 +100,7 @@ jobs:
 
       - uses: hashicorp/setup-packer@ce93c3c08a6c2ff2275bf4b54ff0d9a75f6c9789 # v3.4.0
 
-      - uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ secrets.AMI_BUILD_ROLE_ARN }}
           aws-region: ${{ needs.resolve-inputs.outputs.source_region }}
@@ -210,7 +210,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ secrets.AMI_BUILD_ROLE_ARN }}
           aws-region: ${{ needs.resolve-inputs.outputs.source_region }}
