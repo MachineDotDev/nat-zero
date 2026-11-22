@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/MachineDotDev/nat-zero/compare/v0.5.5...v0.6.0) (2026-11-22)
+
+
+### Features
+
+* always_on_azs keeps the NAT running in chosen AZs ([#79](https://github.com/MachineDotDev/nat-zero/issues/79)) ([56b1f1c](https://github.com/MachineDotDev/nat-zero/commit/56b1f1c4fc7fc7b2617909af230468c92eaaa3b0))
+
 ## [0.5.5](https://github.com/MachineDotDev/nat-zero/compare/v0.5.4...v0.5.5) (2026-09-13)
 
 
