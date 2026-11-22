@@ -26,6 +26,7 @@ No modules.
 | [aws_iam_role_policy_attachment.ssm_policy_attachment](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role_policy_attachment) | resource |
 | [aws_lambda_function.nat_zero](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lambda_function) | resource |
 | [aws_lambda_function_event_invoke_config.nat_zero_invoke_config](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lambda_function_event_invoke_config) | resource |
+| [aws_lambda_invocation.always_on_sweep](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lambda_invocation) | resource |
 | [aws_lambda_invocation.cleanup](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lambda_invocation) | resource |
 | [aws_lambda_permission.allow_ec2_state_change_eventbridge](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lambda_permission) | resource |
 | [aws_launch_template.nat_launch_template](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/launch_template) | resource |
@@ -44,6 +45,7 @@ No modules.
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
+| <a name="input_always_on_azs"></a> [always\_on\_azs](#input\_always\_on\_azs) | Availability zones whose NAT instance is kept running even when no workloads exist (default: none, every AZ scales to zero). Each must be in availability\_zones. | `list(string)` | `[]` | no |
 | <a name="input_ami_id"></a> [ami\_id](#input\_ami\_id) | Explicit AMI ID to use (overrides AMI lookup entirely) | `string` | `null` | no |
 | <a name="input_ami_name_pattern"></a> [ami\_name\_pattern](#input\_ami\_name\_pattern) | AMI name pattern used when resolving the default nat-zero AMI. Override this to use your own shared AMI. | `string` | `"nat-zero-al2023-minimal-arm64-20260306-064438"` | no |
 | <a name="input_ami_owner_account"></a> [ami\_owner\_account](#input\_ami\_owner\_account) | Owner account ID used when resolving the default nat-zero AMI by name pattern. Override this to use your own shared AMI. | `string` | `"590144423513"` | no |

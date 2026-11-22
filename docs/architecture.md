@@ -45,7 +45,7 @@ reconcile(az):
     workloads = pending/running non-NAT instances in AZ
     nats      = non-terminated NAT instances in AZ
     eips      = EIPs tagged for this AZ
-    needNAT   = len(workloads) > 0
+    needNAT   = len(workloads) > 0 || az in always_on_azs
 
     # One action per invocation, then return
 ```

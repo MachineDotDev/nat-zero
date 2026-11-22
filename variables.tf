@@ -19,6 +19,17 @@ variable "availability_zones" {
   description = "List of availability zones to deploy NAT instances in"
 }
 
+variable "always_on_azs" {
+  type        = list(string)
+  default     = []
+  description = "Availability zones whose NAT instance is kept running even when no workloads exist (default: none, every AZ scales to zero). Each must be in availability_zones."
+
+  validation {
+    condition     = alltrue([for az in var.always_on_azs : contains(var.availability_zones, az)])
+    error_message = "Every entry in always_on_azs must also be in availability_zones."
+  }
+}
+
 variable "public_subnets" {
   type        = list(string)
   description = "Public subnet IDs (one per AZ) for NAT instance public ENIs"
