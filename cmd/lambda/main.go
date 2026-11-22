@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"os"
+	"strings"
 
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -14,6 +15,17 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// parseAZSet turns a comma-separated AZ list into a set; empty means none.
+func parseAZSet(v string) map[string]bool {
+	set := map[string]bool{}
+	for _, az := range strings.Split(v, ",") {
+		if az = strings.TrimSpace(az); az != "" {
+			set[az] = true
+		}
+	}
+	return set
 }
 
 func main() {
@@ -30,6 +42,7 @@ func main() {
 		IgnoreTagValue: envOr("IGNORE_TAG_VALUE", "true"),
 		TargetVPC:      os.Getenv("TARGET_VPC_ID"),
 		ConfigVersion:  os.Getenv("CONFIG_VERSION"),
+		AlwaysOnAZs:    parseAZSet(os.Getenv("ALWAYS_ON_AZS")),
 	}
 
 	lambda.Start(h.HandleRequest)

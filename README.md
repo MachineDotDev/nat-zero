@@ -55,7 +55,7 @@ The event is just a trigger — the reconciler always computes the correct actio
 | Yes | Stopped | Start NAT |
 | Yes | Stopping | Wait |
 | Yes | Running, no EIP | Attach EIP |
-| No | Running / pending | Stop NAT |
+| No (AZ not in `always_on_azs`) | Running / pending | Stop NAT |
 | No | Stopped, has EIP | Release EIP |
 | — | Multiple NATs | Terminate duplicates |
 
@@ -181,6 +181,7 @@ No modules.
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
+| <a name="input_always_on_azs"></a> [always\_on\_azs](#input\_always\_on\_azs) | Availability zones whose NAT instance is kept running even when no workloads exist (default: none, every AZ scales to zero). Each must be in availability\_zones. | `list(string)` | `[]` | no |
 | <a name="input_ami_id"></a> [ami\_id](#input\_ami\_id) | Explicit AMI ID to use (overrides AMI lookup entirely) | `string` | `null` | no |
 | <a name="input_ami_name_pattern"></a> [ami\_name\_pattern](#input\_ami\_name\_pattern) | AMI name pattern used when resolving the default nat-zero AMI. Override this to use your own shared AMI. | `string` | `"nat-zero-al2023-minimal-arm64-20260306-064438"` | no |
 | <a name="input_ami_owner_account"></a> [ami\_owner\_account](#input\_ami\_owner\_account) | Owner account ID used when resolving the default nat-zero AMI by name pattern. Override this to use your own shared AMI. | `string` | `"590144423513"` | no |

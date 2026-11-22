@@ -99,6 +99,7 @@ resource "aws_lambda_function" "nat_zero" {
       NAT_TAG_VALUE    = var.nat_tag_value
       IGNORE_TAG_KEY   = var.ignore_tag_key
       IGNORE_TAG_VALUE = var.ignore_tag_value
+      ALWAYS_ON_AZS    = join(",", var.always_on_azs)
       TARGET_VPC_ID    = var.vpc_id
       CONFIG_VERSION = sha256(join(",", [
         coalesce(local.effective_ami_id, "missing"),

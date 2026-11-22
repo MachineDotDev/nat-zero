@@ -21,6 +21,8 @@ type Handler struct {
 	IgnoreTagValue string
 	TargetVPC      string
 	ConfigVersion  string
+	// AlwaysOnAZs keeps the NAT running in these AZs even with no workloads.
+	AlwaysOnAZs map[string]bool
 }
 
 // HandleRequest is the Lambda entry point.
@@ -33,6 +35,13 @@ func (h *Handler) handle(ctx context.Context, event Event) error {
 	if event.Action == "cleanup" {
 		log.Println("Running destroy-time cleanup")
 		h.cleanupAll(ctx)
+		return nil
+	}
+	if event.Action == "sweep" {
+		// Sent by Terraform when always_on_azs changes: no EC2 event would
+		// otherwise start an always-on NAT in an AZ with no workloads.
+		log.Println("Running sweep of all AZs")
+		h.sweepAllAZs(ctx)
 		return nil
 	}
 
@@ -110,7 +119,7 @@ func (h *Handler) reconcile(ctx context.Context, az, vpc string, event Event, tr
 		}
 	}
 
-	needNAT := len(workloads) > 0
+	needNAT := len(workloads) > 0 || h.AlwaysOnAZs[az]
 
 	// --- Duplicate NAT cleanup (before anything else) ---
 	if len(nats) > 1 {

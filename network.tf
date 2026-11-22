@@ -79,6 +79,22 @@ resource "aws_route" "nat_route" {
 # the Lambda, waits (time_sleep), and finally removes the log group and
 # IAM resources. This prevents the cleanup invocation from recreating a
 # log group that was already destroyed.
+# Converge always-on AZs right after apply: with no workloads there is no EC2
+# event to start their NAT. Re-invoked whenever always_on_azs changes; an AZ
+# removed from the list scales down on its next event (or this sweep).
+resource "aws_lambda_invocation" "always_on_sweep" {
+  count         = length(var.always_on_azs) > 0 ? 1 : 0
+  function_name = aws_lambda_function.nat_zero.function_name
+  input         = jsonencode({ action = "sweep", always_on_azs = sort(var.always_on_azs) })
+
+  depends_on = [
+    aws_network_interface.nat_public_network_interface,
+    aws_network_interface.nat_private_network_interface,
+    aws_cloudwatch_log_group.nat_zero_logs,
+    aws_iam_role_policy.lambda_iam_policy,
+  ]
+}
+
 resource "aws_lambda_invocation" "cleanup" {
   function_name   = aws_lambda_function.nat_zero.function_name
   input           = jsonencode({ action = "cleanup" })
